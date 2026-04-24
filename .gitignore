@@ -1,0 +1,10 @@
+node_modules/
+.env
+dist/
+coverage/
+reports/
+*.log
+ledger.json
+polybot-report.html
+graphify-out/
+src/graphify-out/
