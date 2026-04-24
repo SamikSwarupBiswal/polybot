@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { VirtualWallet } from '../execution/VirtualWallet.js';
+import { CalibrationTracker } from '../analytics/CalibrationTracker.js';
 import { logger } from '../utils/logger.js';
 
 const GAMMA_API_URL = process.env.GAMMA_API_URL || 'https://gamma-api.polymarket.com';
@@ -11,13 +12,15 @@ const GAMMA_API_URL = process.env.GAMMA_API_URL || 'https://gamma-api.polymarket
  */
 export class MarketResolutionMonitor {
     private readonly wallet: VirtualWallet;
+    private readonly calibration: CalibrationTracker | null;
     private readonly intervalMs: number;
     private intervalId: NodeJS.Timeout | null = null;
     private isPolling = false;
 
-    constructor(wallet: VirtualWallet, intervalMs: number = 5 * 60 * 1000) {
+    constructor(wallet: VirtualWallet, intervalMs: number = 5 * 60 * 1000, calibration?: CalibrationTracker) {
         this.wallet = wallet;
         this.intervalMs = intervalMs;
+        this.calibration = calibration ?? null;
     }
 
     public startPolling() {
@@ -53,6 +56,16 @@ export class MarketResolutionMonitor {
                     for (const trade of tradesInMarket) {
                         const won = this.didTradeWin(trade.side, resolved.winningOutcome);
                         this.wallet.resolveTrade(trade.trade_id, won);
+
+                        // Record outcome in calibration tracker for feedback loop
+                        if (this.calibration) {
+                            this.calibration.recordOutcome(
+                                trade.trade_id,
+                                won ? 'WIN' : 'LOSS',
+                                new Date().toISOString()
+                            );
+                        }
+
                         logger.info(`[ResolutionMonitor] Resolved trade ${trade.trade_id.substring(0, 8)}: ${won ? 'WIN' : 'LOSS'} (market: "${trade.market_question.substring(0, 50)}", winning outcome: ${resolved.winningOutcome})`);
                     }
                 } catch (error: any) {

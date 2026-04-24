@@ -6,6 +6,7 @@ reports/
 *.log
 ledger.json
 price_history.json
+calibration.json
 polybot-report.html
 graphify-out/
 src/graphify-out/

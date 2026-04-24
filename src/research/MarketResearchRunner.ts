@@ -3,32 +3,38 @@ import { logger } from '../utils/logger.js';
 import { MarketScanner } from './MarketScanner.js';
 import { OrderbookAnalyzer, PricedMarket } from './OrderbookAnalyzer.js';
 import { OpportunityScorer, ScoredMarket } from './OpportunityScorer.js';
+import { OrderFlowAnalyzer } from './OrderFlowAnalyzer.js';
 import { PriceHistoryStore } from '../data/PriceHistoryStore.js';
 import { EdgeEstimator, EdgeEstimate } from '../strategy/EdgeEstimator.js';
 import { LLMSignalProvider } from '../strategy/LLMSignalProvider.js';
+import { CalibrationTracker } from '../analytics/CalibrationTracker.js';
 import { TradeSignal } from '../execution/RiskGate.js';
 
 /**
  * Orchestrates the full market research pipeline on a configurable schedule:
- *   Scan → Price → Record History → Score → Edge Detect → (LLM) → Emit Signals
+ *   Scan → Price → Record History → Score → Order Flow → Edge Detect → (LLM) → Emit
  *
- * KEY UPGRADE: Now uses EdgeEstimator to determine WHETHER to trade and which
- * direction, instead of blindly trading every scored market.
+ * Tier 3 Pipeline:
+ * - Order flow analysis feeds buy/sell imbalance into EdgeEstimator
+ * - Market regime detection adjusts strategy (momentum vs contrarian)
+ * - Calibration feedback corrects confidence based on historical accuracy
  */
 export class MarketResearchRunner extends EventEmitter {
     private readonly scanner: MarketScanner;
     private readonly analyzer: OrderbookAnalyzer;
     private readonly scorer: OpportunityScorer;
+    private readonly orderFlowAnalyzer: OrderFlowAnalyzer;
     private readonly priceHistory: PriceHistoryStore;
     private readonly edgeEstimator: EdgeEstimator;
     private readonly llm: LLMSignalProvider;
+    private readonly calibration: CalibrationTracker;
     private readonly intervalMs: number;
     private readonly signalsPerCycle: number;
     private intervalId: NodeJS.Timeout | null = null;
     private isRunning = false;
+    private cycleCount = 0;
 
-    /** Tracks which markets we've already emitted signals for,
-     *  so we don't spam the same market every 15 minutes. */
+    /** Tracks which markets we've already emitted signals for. */
     private readonly recentlySignaled = new Map<string, number>();
     private readonly signalCooldownMs: number;
 
@@ -39,38 +45,47 @@ export class MarketResearchRunner extends EventEmitter {
         maxPages?: number;
         minVolumeUsd?: number;
         priceHistory?: PriceHistoryStore;
+        calibration?: CalibrationTracker;
     }) {
         super();
-        this.intervalMs = opts?.intervalMs ?? 15 * 60 * 1000;       // 15 min
+        this.intervalMs = opts?.intervalMs ?? 15 * 60 * 1000;
         this.signalsPerCycle = opts?.signalsPerCycle ?? 5;
-        this.signalCooldownMs = opts?.signalCooldownMs ?? 60 * 60 * 1000; // 1 hour
+        this.signalCooldownMs = opts?.signalCooldownMs ?? 60 * 60 * 1000;
 
         this.scanner = new MarketScanner({
             maxPages: opts?.maxPages ?? 10,
             minVolumeUsd: opts?.minVolumeUsd ?? 50000
         });
         this.analyzer = new OrderbookAnalyzer();
-        this.scorer = new OpportunityScorer({ topN: 30 }); // Widen pool for edge filtering
+        this.scorer = new OpportunityScorer({ topN: 30 });
+        this.orderFlowAnalyzer = new OrderFlowAnalyzer();
         this.priceHistory = opts?.priceHistory ?? new PriceHistoryStore();
-        this.edgeEstimator = new EdgeEstimator(this.priceHistory);
+        this.calibration = opts?.calibration ?? new CalibrationTracker();
+        this.edgeEstimator = new EdgeEstimator(this.priceHistory, this.calibration);
         this.llm = new LLMSignalProvider({ maxCallsPerCycle: 10 });
     }
 
+    /** Expose calibration tracker for resolution monitor to record outcomes. */
+    public getCalibration(): CalibrationTracker {
+        return this.calibration;
+    }
+
     public startPolling() {
-        logger.info(`[MarketResearch] Starting research pipeline every ${Math.round(this.intervalMs / 60000)} minutes.`);
+        logger.info(`[MarketResearch] Starting Tier 3 pipeline every ${Math.round(this.intervalMs / 60000)} minutes.`);
         this.intervalId = setInterval(() => {
             this.runCycle();
         }, this.intervalMs);
-        // First run immediately
         this.runCycle();
     }
 
     public stopPolling() {
         if (this.intervalId) clearInterval(this.intervalId);
+        // Print calibration summary on shutdown
+        this.printCalibrationSummary();
         logger.info('[MarketResearch] Stopped research pipeline.');
     }
 
-    /** Manually trigger a research cycle (also called on timer). */
+    /** Manually trigger a research cycle. */
     public async runCycle(): Promise<ScoredMarket[]> {
         if (this.isRunning) {
             logger.debug('[MarketResearch] Skipping cycle — previous cycle still running.');
@@ -78,6 +93,7 @@ export class MarketResearchRunner extends EventEmitter {
         }
 
         this.isRunning = true;
+        this.cycleCount++;
         const cycleStart = Date.now();
         this.llm.resetCycleCounter();
 
@@ -99,14 +115,21 @@ export class MarketResearchRunner extends EventEmitter {
             // ─── Step 3: Score for tradability ────────────────────
             const ranked = this.scorer.rank(pricedMarkets);
 
-            // ─── Step 4: Edge detection ───────────────────────────
-            // Run edge estimation on ranked markets.
-            // On first cycle (no price history yet), edge estimator will use
-            // available signals (spread, volume, base rate) and require fewer signals.
-            const edgeResults = this.edgeEstimator.estimateBatch(ranked.map(r => r.market));
+            // ─── Step 3.5: Order flow analysis (NEW in Tier 3) ────
+            // Analyze buy/sell flow for top scored markets
+            const flowTargets = ranked.slice(0, 20).map(r => ({
+                conditionId: r.market.market.conditionId,
+                tokenId: r.market.snapshots.find(s => s.outcome.toUpperCase() === 'YES')?.tokenId || ''
+            })).filter(t => t.tokenId);
+            const orderFlows = await this.orderFlowAnalyzer.analyzeBatch(flowTargets);
+
+            // ─── Step 4: Edge detection (upgraded in Tier 3) ──────
+            const edgeResults = this.edgeEstimator.estimateBatch(
+                ranked.map(r => r.market),
+                orderFlows
+            );
 
             // ─── Step 5: LLM enrichment (optional) ────────────────
-            // For top edge candidates, optionally get LLM probability estimates
             if (this.llm.isEnabled() && edgeResults.length > 0) {
                 await this.enrichWithLLM(edgeResults.slice(0, 5));
             }
@@ -115,7 +138,6 @@ export class MarketResearchRunner extends EventEmitter {
             this.cleanupCooldowns();
             let emittedCount = 0;
 
-            // Prefer edge-detected markets. Fall back to score-based if no edges found.
             if (edgeResults.length > 0) {
                 for (const { market: pm, edge } of edgeResults) {
                     if (emittedCount >= this.signalsPerCycle) break;
@@ -123,7 +145,6 @@ export class MarketResearchRunner extends EventEmitter {
                     const marketId = pm.market.conditionId;
                     if (this.isRecentlySignaled(marketId)) continue;
 
-                    // Find the ScoredMarket to reuse its token IDs
                     const scored = ranked.find(r => r.market.market.conditionId === marketId);
                     if (!scored) continue;
 
@@ -133,17 +154,17 @@ export class MarketResearchRunner extends EventEmitter {
 
                     logger.info(
                         `[MarketResearch] 🎯 Edge signal #${emittedCount}: ` +
-                        `${signal.side} "${signal.market_question.substring(0, 45)}..." ` +
+                        `${signal.side} "${signal.market_question.substring(0, 40)}..." ` +
                         `@ $${signal.requested_price.toFixed(3)} ` +
-                        `(edge: ${(edge.netEdge * 100).toFixed(1)}%, conf: ${edge.confidence.toFixed(2)}, ` +
-                        `model: ${edge.modelProbability.toFixed(2)} vs market: ${edge.marketPrice.toFixed(2)})`
+                        `(edge: ${(edge.netEdge * 100).toFixed(1)}%, ` +
+                        `regime: ${edge.regime.regime}, ` +
+                        `conf: ${edge.confidence.toFixed(2)})`
                     );
                     this.emit('signal', signal);
                 }
             }
 
-            // Fallback: if no edge was detected (first cycle, or very efficient market),
-            // emit score-based signals at reduced confidence
+            // Fallback for first cycles / efficient markets
             if (emittedCount === 0) {
                 for (const scored of ranked) {
                     if (emittedCount >= Math.min(this.signalsPerCycle, 2)) break;
@@ -157,19 +178,26 @@ export class MarketResearchRunner extends EventEmitter {
 
                     logger.info(
                         `[MarketResearch] 📊 Fallback signal #${emittedCount}: ` +
-                        `${signal.side} "${signal.market_question.substring(0, 45)}..." ` +
-                        `@ $${signal.requested_price.toFixed(3)} (score-only, conf: ${signal.confidence.toFixed(2)})`
+                        `${signal.side} "${signal.market_question.substring(0, 40)}..." ` +
+                        `@ $${signal.requested_price.toFixed(3)} (score-only)`
                     );
                     this.emit('signal', signal);
                 }
             }
 
             const elapsed = ((Date.now() - cycleStart) / 1000).toFixed(1);
+            const flowCount = [...orderFlows.values()].filter(f => f.hasData).length;
             logger.info(
-                `[MarketResearch] Cycle complete in ${elapsed}s: ` +
+                `[MarketResearch] Cycle #${this.cycleCount} in ${elapsed}s: ` +
                 `${candidates.length} scanned → ${pricedMarkets.length} priced → ` +
-                `${ranked.length} scored → ${edgeResults.length} with edge → ${emittedCount} signals emitted.`
+                `${ranked.length} scored → ${flowCount} with flow → ` +
+                `${edgeResults.length} with edge → ${emittedCount} signals.`
             );
+
+            // Print calibration report every 10 cycles
+            if (this.cycleCount % 10 === 0) {
+                this.printCalibrationSummary();
+            }
 
             return ranked;
         } catch (error: any) {
@@ -182,11 +210,9 @@ export class MarketResearchRunner extends EventEmitter {
 
     // ─── Signal Builders ────────────────────────────────────────────
 
-    /** Build signal from edge-detected market (primary path). */
     private buildEdgeSignal(scored: ScoredMarket, edge: EdgeEstimate): TradeSignal {
         const m = scored.market.market;
 
-        // Use edge direction instead of scorer's naive side selection
         const yesToken = scored.market.snapshots.find(s => s.outcome.toUpperCase() === 'YES');
         const noToken = scored.market.snapshots.find(s => s.outcome.toUpperCase() === 'NO');
 
@@ -200,7 +226,6 @@ export class MarketResearchRunner extends EventEmitter {
             tokenId = noToken.tokenId;
             price = noToken.bestAsk > 0 ? noToken.bestAsk : 1 - scored.market.yesMidpoint;
         } else {
-            // Fallback
             tokenId = scored.recommendedTokenId;
             price = scored.recommendedPrice;
         }
@@ -214,7 +239,7 @@ export class MarketResearchRunner extends EventEmitter {
             side: edge.direction,
             requested_price: Math.min(Math.max(price, 0.01), 0.99),
             recommended_size_usd: 1500,
-            source: `EdgeDetection (edge: ${(edge.netEdge * 100).toFixed(1)}%, signals: ${edge.signalCount})`,
+            source: `EdgeDetection (edge: ${(edge.netEdge * 100).toFixed(1)}%, regime: ${edge.regime.regime}, signals: ${edge.signalCount})`,
             confidence: edge.confidence,
             force_maker: true,
             market_volume_usd: m.volume,
@@ -224,7 +249,6 @@ export class MarketResearchRunner extends EventEmitter {
         };
     }
 
-    /** Build signal from score-only market (fallback when no edge detected). */
     private buildFallbackSignal(scored: ScoredMarket): TradeSignal {
         const m = scored.market.market;
         return {
@@ -235,9 +259,9 @@ export class MarketResearchRunner extends EventEmitter {
             category: m.category,
             side: scored.recommendedSide,
             requested_price: scored.recommendedPrice,
-            recommended_size_usd: 1000,  // Smaller size for lower-confidence signals
+            recommended_size_usd: 1000,
             source: `MarketResearch-Fallback (score: ${scored.score.toFixed(3)})`,
-            confidence: Math.min(Math.max(scored.score * 0.8, 0.55), 0.75), // Capped lower
+            confidence: Math.min(Math.max(scored.score * 0.8, 0.55), 0.75),
             force_maker: true,
             market_volume_usd: m.volume,
             market_end_date: m.endDate,
@@ -262,7 +286,6 @@ export class MarketResearchRunner extends EventEmitter {
             );
 
             if (llmResult) {
-                // Blend LLM estimate with technical edge estimate (60% LLM, 40% technical)
                 const blendedProb = llmResult.probability * 0.6 + edge.modelProbability * 0.4;
                 edge.modelProbability = blendedProb;
                 edge.rawEdge = Math.abs(blendedProb - edge.marketPrice);
@@ -274,10 +297,40 @@ export class MarketResearchRunner extends EventEmitter {
                 logger.info(
                     `[MarketResearch] 🤖 LLM enriched "${pm.market.question.substring(0, 40)}": ` +
                     `LLM=${llmResult.probability.toFixed(2)}, blended=${blendedProb.toFixed(2)}, ` +
-                    `net edge=${(edge.netEdge * 100).toFixed(1)}%`
+                    `edge=${(edge.netEdge * 100).toFixed(1)}%`
                 );
             }
         }
+    }
+
+    // ─── Calibration ────────────────────────────────────────────────
+
+    private printCalibrationSummary(): void {
+        const report = this.calibration.generateReport();
+        if (report.resolvedTrades < 3) return;
+
+        logger.info('');
+        logger.info('══════════ CALIBRATION REPORT ══════════');
+        logger.info(`Resolved trades: ${report.resolvedTrades}/${report.totalTrades}`);
+        logger.info(`Win rate: ${(report.winRate * 100).toFixed(1)}%`);
+        logger.info(`Brier score: ${report.brierScore.toFixed(3)} (lower=better, 0.25=coin flip)`);
+        logger.info(`Log loss: ${report.logLoss.toFixed(3)}`);
+
+        if (report.calibrationBuckets.length > 0) {
+            logger.info('Calibration buckets:');
+            for (const bucket of report.calibrationBuckets) {
+                logger.info(
+                    `  ${bucket.bucketLabel}: predicted=${(bucket.predictedProbAvg * 100).toFixed(0)}%, ` +
+                    `actual=${(bucket.actualWinRate * 100).toFixed(0)}%, n=${bucket.count}`
+                );
+            }
+        }
+
+        for (const rec of report.recommendations) {
+            logger.info(`  → ${rec}`);
+        }
+        logger.info('════════════════════════════════════════');
+        logger.info('');
     }
 
     // ─── Utilities ──────────────────────────────────────────────────
