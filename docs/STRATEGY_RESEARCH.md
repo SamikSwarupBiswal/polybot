@@ -8,11 +8,11 @@ This project should treat Polymarket prices as probability estimates and only tr
 - Maximum category exposure: 25% of conservative equity.
 - Maximum open positions: 15.
 - Daily realized loss cap: 10% of starting capital.
-- Stop-trading capital floor: 50% of starting capital.
 - Minimum time to market end: 48 hours.
 - Minimum whale trade copied: $5,000 source trade size.
 - Maximum whale follow size: $2,000.
-- Bankroll sizing: base bet is intentionally small, shrinks near the 50% floor, and is capped even when the wallet grows.
+- Per-trade planned max loss: 50% of that trade's stake using a paper stop-loss price.
+- Bankroll sizing: base bet is intentionally small, shrinks during drawdowns, and is capped even when the wallet grows.
 
 ## Useful Trading Inputs
 
@@ -29,7 +29,7 @@ Real Polymarket traders and market makers generally combine several categories o
 
 - Bayesian probability update: start from the market price as the prior, then adjust with structured evidence from news, order flow, or specialist-wallet activity.
 - Kelly-lite sizing: size proportional to estimated edge and confidence, then cap with hard portfolio limits. Full Kelly is too aggressive for a noisy MVP.
-- Capital-preservation sizing: never allow open trade sizing to push conservative equity below the 50% wallet floor; when drawdown is high, trade size should compress before the bot stops completely.
+- Capital-preservation sizing: planned risk is calculated as stake multiplied by max-loss percentage; if drawdown is high, trade size should compress before the bot stops completely.
 - Whale score: combine PnL, win rate, sample size, recency, and category consistency. Do not copy wallets purely because they recently made one large winning trade.
 - Orderbook quality score: prefer markets with tight spreads, enough depth at/near the intended limit price, and enough volume to exit.
 - Calibration tracking: after each resolved paper trade, compare predicted probability buckets against realized outcomes.

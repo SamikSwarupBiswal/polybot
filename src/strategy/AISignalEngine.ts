@@ -69,6 +69,7 @@ export class AISignalEngine extends EventEmitter {
             source: `News: ${headline.substring(0, 30)}...`,
             confidence: 0.85,
             force_maker: true,
+            max_loss_pct: 0.50,
             market_volume_usd: market.volume,
             market_end_date: market.endDate,
             current_market_price: side === 'YES' ? market.prob : 1 - market.prob,

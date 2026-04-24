@@ -37,11 +37,11 @@ export class PerformanceTracker {
         let simulatedEquity = totalDeposited;
         
         for (const t of closedTrades) {
-            if (t.status === 'CLOSED_WIN') {
+            const pnl = t.pnl || 0;
+            if (t.status === 'CLOSED_WIN' || (t.status === 'CLOSED_EXIT' && pnl > 0)) {
                 wins++;
                 if (modes[t.mode]) modes[t.mode].wins++;
             }
-            const pnl = t.pnl || 0;
             totalPnl += pnl;
             if (modes[t.mode]) modes[t.mode].pnl += pnl;
 

@@ -15,12 +15,17 @@ export interface TradeRecord {
     shares: number;
     notional_cost: number;
     simulated_fee: number;
+    max_loss_pct?: number;
+    max_loss_usd?: number;
+    stop_loss_price?: number;
     signal_source: string;
     signal_confidence: number;
     timestamp: string;
     resolved_at?: string | null;
-    status: 'OPEN' | 'CLOSED_WIN' | 'CLOSED_LOSS' | 'EXPIRED';
+    status: 'OPEN' | 'CLOSED_WIN' | 'CLOSED_LOSS' | 'CLOSED_EXIT' | 'EXPIRED';
     resolution_price: number | null;
+    exit_price?: number | null;
+    exit_reason?: 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL_EXIT' | null;
     pnl: number | null;
     notes: string;
 }
@@ -80,7 +85,7 @@ export class VirtualWallet {
     }
 
     public getClosedTrades(): TradeRecord[] {
-        return this.ledger.trades.filter(t => t.status === 'CLOSED_WIN' || t.status === 'CLOSED_LOSS');
+        return this.ledger.trades.filter(t => t.status === 'CLOSED_WIN' || t.status === 'CLOSED_LOSS' || t.status === 'CLOSED_EXIT');
     }
 
     public getOpenExposureByMarket(marketId: string): number {
@@ -128,6 +133,8 @@ export class VirtualWallet {
             resolved_at: null,
             status: 'OPEN',
             resolution_price: null,
+            exit_price: null,
+            exit_reason: null,
             pnl: null,
         };
 
@@ -169,5 +176,46 @@ export class VirtualWallet {
         }
 
         this.saveLedger();
+    }
+
+    public closeTradeAtPrice(
+        tradeId: string,
+        exitPrice: number,
+        reason: 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL_EXIT' = 'MANUAL_EXIT'
+    ) {
+        const trade = this.ledger.trades.find(t => t.trade_id === tradeId);
+        if (!trade || trade.status !== 'OPEN') {
+            logger.warn(`Cannot close trade ${tradeId}: not found or not OPEN.`);
+            return;
+        }
+
+        const clampedExitPrice = Math.min(Math.max(exitPrice, 0), 1);
+        const proceeds = trade.shares * clampedExitPrice;
+        const pnl = proceeds - (trade.notional_cost + trade.simulated_fee);
+
+        this.ledger.balance += proceeds;
+        trade.pnl = pnl;
+        trade.resolution_price = clampedExitPrice;
+        trade.exit_price = clampedExitPrice;
+        trade.exit_reason = reason;
+        trade.status = 'CLOSED_EXIT';
+        trade.resolved_at = new Date().toISOString();
+
+        logger.info(`Closed trade [${tradeId}] via ${reason} @ $${clampedExitPrice.toFixed(3)}: PnL ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`);
+        this.saveLedger();
+    }
+
+    public applyStopLoss(tradeId: string, currentSidePrice: number): boolean {
+        const trade = this.ledger.trades.find(t => t.trade_id === tradeId);
+        if (!trade || trade.status !== 'OPEN' || typeof trade.stop_loss_price !== 'number') {
+            return false;
+        }
+
+        if (currentSidePrice <= trade.stop_loss_price) {
+            this.closeTradeAtPrice(tradeId, currentSidePrice, 'STOP_LOSS');
+            return true;
+        }
+
+        return false;
     }
 }

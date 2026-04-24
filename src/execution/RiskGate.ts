@@ -19,12 +19,12 @@ export interface TradeSignal {
     whale_trade_size_usd?: number;
     current_market_price?: number;
     model_probability?: number;
+    max_loss_pct?: number;
 }
 
 export class RiskGate {
     private readonly maxDrawdownLimit = 0.25;
     private readonly dailyLossLimitPct = 0.10;
-    private readonly stopTradingEquityFloorPct = 0.50;
     private readonly maxSingleMarketExposurePct = 0.05;
     private readonly maxCategoryExposurePct = 0.25;
     private readonly maxOpenPositions = 15;
@@ -33,8 +33,10 @@ export class RiskGate {
     private readonly maxWhaleFollowUsd = 2000;
     private readonly minHoursToResolution = 48;
     private readonly minTradeSizeUsd = 10;
-    private readonly baseRiskPct = 0.015;
-    private readonly maxRiskPct = 0.035;
+    private readonly defaultMaxLossPerTradePct = 0.50;
+    private readonly basePortfolioRiskPct = 0.01;
+    private readonly maxPortfolioRiskPct = 0.02;
+    private readonly maxStakePct = 0.035;
     private readonly highConvictionEdgePct = 0.20;
 
     /**
@@ -54,13 +56,6 @@ export class RiskGate {
         }
 
         // 2. Hard portfolio limits from the PRD
-        const conservativeEquity = wallet.getConservativeEquity();
-        const equityFloor = wallet.getTotalDeposited() * this.stopTradingEquityFloorPct;
-        if (conservativeEquity <= equityFloor) {
-            logger.warn(`[RiskGate] BLOCKED: Conservative equity $${conservativeEquity.toFixed(2)} is at/below the 50% capital preservation floor of $${equityFloor.toFixed(2)}.`);
-            return 0;
-        }
-
         if (wallet.getOpenTrades().length >= this.maxOpenPositions) {
             logger.warn(`[RiskGate] BLOCKED: Max open positions (${this.maxOpenPositions}) reached.`);
             return 0;
@@ -97,7 +92,8 @@ export class RiskGate {
         }
 
         // 4. Bankroll-aware position sizing: bets shrink as the wallet approaches
-        // the 50% capital floor and grow only gently when the wallet is ahead.
+        // drawdown and grow only gently when the wallet is ahead.
+        const conservativeEquity = wallet.getConservativeEquity();
         const bankrollSizedTrade = this.calculateBankrollAwareSize(signal, wallet, conservativeEquity);
         const marketRoom = Math.max(0, conservativeEquity * this.maxSingleMarketExposurePct - wallet.getOpenExposureByMarket(signal.market_id));
         const categoryRoom = Math.max(0, conservativeEquity * this.maxCategoryExposurePct - wallet.getOpenExposureByCategory(signal.category));
@@ -128,27 +124,34 @@ export class RiskGate {
 
     private calculateBankrollAwareSize(signal: TradeSignal, wallet: VirtualWallet, conservativeEquity: number): number {
         const initialCapital = wallet.getTotalDeposited();
-        const equityFloor = initialCapital * this.stopTradingEquityFloorPct;
-        const floorBuffer = Math.max(0, conservativeEquity - equityFloor);
-        const floorBufferPct = initialCapital > 0 ? floorBuffer / initialCapital : 0;
+        const equityRatio = initialCapital > 0 ? conservativeEquity / initialCapital : 1;
         const profitPct = initialCapital > 0 ? Math.max(0, (conservativeEquity - initialCapital) / initialCapital) : 0;
         const edgePct = this.estimateEdgePct(signal);
+        const maxLossPct = this.getMaxLossPct(signal);
 
         const confidenceMultiplier = Math.min(Math.max(signal.confidence, 0.6), 0.95);
         const edgeMultiplier = edgePct > 0
             ? Math.min(1.25, 0.5 + edgePct / this.highConvictionEdgePct)
             : 0.75;
-        const drawdownMultiplier = Math.min(1, Math.max(0.15, floorBufferPct / this.stopTradingEquityFloorPct));
+        const drawdownMultiplier = Math.min(1, Math.max(0.25, equityRatio));
         const profitMultiplier = Math.min(1.25, 1 + profitPct * 0.5);
 
-        const riskPct = Math.min(
-            this.maxRiskPct,
-            this.baseRiskPct * confidenceMultiplier * edgeMultiplier * drawdownMultiplier * profitMultiplier
+        const portfolioRiskPct = Math.min(
+            this.maxPortfolioRiskPct,
+            this.basePortfolioRiskPct * confidenceMultiplier * edgeMultiplier * drawdownMultiplier * profitMultiplier
         );
 
-        const size = conservativeEquity * riskPct;
-        logger.debug(`[RiskGate] Bankroll sizing: equity=$${conservativeEquity.toFixed(2)}, riskPct=${(riskPct * 100).toFixed(2)}%, size=$${size.toFixed(2)}.`);
+        const dollarsAtRisk = conservativeEquity * portfolioRiskPct;
+        const sizeByStopLoss = dollarsAtRisk / maxLossPct;
+        const maxStakeSize = conservativeEquity * this.maxStakePct;
+        const size = Math.min(sizeByStopLoss, maxStakeSize);
+
+        logger.debug(`[RiskGate] Bankroll sizing: equity=$${conservativeEquity.toFixed(2)}, portfolioRisk=${(portfolioRiskPct * 100).toFixed(2)}%, maxLoss=${(maxLossPct * 100).toFixed(0)}%, size=$${size.toFixed(2)}.`);
         return size;
+    }
+
+    private getMaxLossPct(signal: TradeSignal): number {
+        return Math.min(Math.max(signal.max_loss_pct ?? this.defaultMaxLossPerTradePct, 0.05), 1);
     }
 
     private estimateEdgePct(signal: TradeSignal): number {

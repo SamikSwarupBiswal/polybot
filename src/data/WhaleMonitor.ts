@@ -111,6 +111,7 @@ export class WhaleMonitor extends EventEmitter {
                         source: wallet,
                         confidence: 0.9,
                         force_maker: true,
+                        max_loss_pct: 0.50,
                         market_volume_usd: market.volume,
                         market_end_date: market.endDate,
                         whale_trade_size_usd: whaleSize
@@ -203,6 +204,7 @@ export class WhaleMonitor extends EventEmitter {
             source: wallet,
             confidence: 0.95,
             force_maker: true,
+            max_loss_pct: 0.50,
             market_volume_usd: 150000,
             market_end_date: '2026-06-30T23:59:59Z',
             whale_trade_size_usd: simulatedInvestment

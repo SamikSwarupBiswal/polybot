@@ -60,7 +60,8 @@ export class SignalAggregator {
                 approvedSize,
                 signal.source,
                 signal.confidence,
-                signal.force_maker
+                signal.force_maker,
+                signal.max_loss_pct
             );
         }
     }

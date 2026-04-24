@@ -25,7 +25,8 @@ export class PaperTradeExecutor {
         investmentUsd: number,
         signalSource: string,
         confidence: number,
-        forceMaker: boolean = true
+        forceMaker: boolean = true,
+        maxLossPct: number = 0.50
     ) {
         try {
             // Apply slippage penalty (we assume the price might cost slightly more to get filled)
@@ -38,6 +39,9 @@ export class PaperTradeExecutor {
             const notionalCost = investmentUsd;
 
             const fee = FeeSimulator.calculateFee(notionalCost, forceMaker, category);
+            const safeMaxLossPct = Math.min(Math.max(maxLossPct, 0.05), 1);
+            const stopLossPrice = Math.max(entryPrice * (1 - safeMaxLossPct), 0.001);
+            const maxLossUsd = (notionalCost + fee) * safeMaxLossPct;
 
             logger.info(`PaperTradeExecutor taking signal [${mode}] for ${marketId} - side: ${side}`);
 
@@ -51,9 +55,12 @@ export class PaperTradeExecutor {
                 shares,
                 notional_cost: notionalCost,
                 simulated_fee: fee,
+                max_loss_pct: safeMaxLossPct,
+                max_loss_usd: maxLossUsd,
+                stop_loss_price: stopLossPrice,
                 signal_source: signalSource,
                 signal_confidence: confidence,
-                notes: `Simulated trade targeting limit execution at ~$${entryPrice.toFixed(3)}/share.`
+                notes: `Simulated trade targeting limit execution at ~$${entryPrice.toFixed(3)}/share with a stop-loss near $${stopLossPrice.toFixed(3)}.`
             });
 
             return trade;
