@@ -4,6 +4,7 @@ import { AISignalEngine } from '../strategy/AISignalEngine.js';
 import { PaperTradeExecutor } from './PaperTradeExecutor.js';
 import { RiskGate, TradeSignal } from './RiskGate.js';
 import { VirtualWallet } from './VirtualWallet.js';
+import { MarketResearchRunner } from '../research/MarketResearchRunner.js';
 import { logger } from '../utils/logger.js';
 
 export class SignalAggregator {
@@ -44,6 +45,14 @@ export class SignalAggregator {
         });
     }
 
+    /** Wire the MarketResearchRunner so its signals flow through the same risk pipeline. */
+    public wireResearchRunner(runner: MarketResearchRunner) {
+        runner.on('signal', (signal: TradeSignal) => {
+            logger.info(`[SignalAggregator] Received new Market Research Signal for ${signal.market_id}`);
+            this.processRouting(signal);
+        });
+    }
+
     private processRouting(signal: TradeSignal) {
         // 1. Evaluate Risk
         const approvedSize = this.riskGate.evaluateSignal(signal, this.wallet);
@@ -67,3 +76,4 @@ export class SignalAggregator {
         }
     }
 }
+

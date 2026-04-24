@@ -11,16 +11,18 @@ import { SignalAggregator } from './execution/SignalAggregator.js';
 import { NewsIngestionService } from './data/NewsIngestionService.js';
 import { AISignalEngine } from './strategy/AISignalEngine.js';
 import { DashboardReporter } from './analytics/DashboardReporter.js';
+import { MarketResearchRunner } from './research/MarketResearchRunner.js';
+import { MarketResolutionMonitor } from './research/MarketResolutionMonitor.js';
 
 async function main() {
     logger.info('===================================================');
-    logger.info(' POLYBOT MVP - Phase 5: Analytics & Dashboards');
+    logger.info(' POLYBOT MVP - Autonomous Paper Trading Engine');
     logger.info('===================================================');
 
     // 1. Initialize Virtual Wallet & Ledger
     const wallet = new VirtualWallet(10000); // Start with $10k
 
-    // 2. Setup Paper Trader
+    // 2. Setup Paper Trader & Position Monitor
     const executor = new PaperTradeExecutor(wallet);
     const positionMonitor = new PositionMonitor(wallet);
 
@@ -32,26 +34,41 @@ async function main() {
     const aiEngine = new AISignalEngine();
     const aggregator = new SignalAggregator(monitor, aiEngine, executor, riskGate, wallet);
 
-    // 4. Start Event Flow
+    // 4. Setup Research Layer (NEW: scans real Polymarket for opportunities)
+    const researchRunner = new MarketResearchRunner({
+        intervalMs: 15 * 60 * 1000,  // Scan every 15 minutes
+        signalsPerCycle: 5,           // Emit up to 5 signals per cycle
+        maxPages: 10,                 // Scan up to 1000 markets
+        minVolumeUsd: 50000           // Only markets with >= $50K volume
+    });
+    const resolutionMonitor = new MarketResolutionMonitor(wallet, 5 * 60 * 1000); // Check resolutions every 5 min
+
+    // Wire research runner signals into the aggregator
+    aggregator.wireResearchRunner(researchRunner);
+
+    // 5. Start Event Flow
     newsService.on('news_headline', (headline: string) => aiEngine.processNews(headline));
     monitor.startPolling();
     newsService.startPolling();
     positionMonitor.startPolling();
+    researchRunner.startPolling();
+    resolutionMonitor.startPolling();
 
-    // 5. Dashboard Heartbeat. Paper trades should only resolve from a real
-    // market-resolution path or explicit test helper, never random outcomes.
+    // 6. Dashboard Heartbeat
     const dashboardInterval = setInterval(() => {
         DashboardReporter.printTerminalDashboard(wallet);
     }, 20000);
 
-    // Prevent immediate exit during testing loop
+    // Graceful shutdown
     process.on('SIGINT', () => {
-        logger.info('Shutting down Polybot MVP Phase 5...');
+        logger.info('Shutting down Polybot MVP...');
         clearInterval(dashboardInterval);
         monitor.stopPolling();
         newsService.stopPolling();
         positionMonitor.stopPolling();
-        
+        researchRunner.stopPolling();
+        resolutionMonitor.stopPolling();
+
         // Final report generation
         DashboardReporter.printTerminalDashboard(wallet);
         DashboardReporter.generateHTMLReport(wallet);
@@ -61,5 +78,5 @@ async function main() {
 }
 
 main().catch((err) => {
-    logger.error('Unhandled fatal error in Phase 2 setup: ' + err.message);
+    logger.error('Unhandled fatal error in Polybot MVP: ' + err.message);
 });

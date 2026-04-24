@@ -24,6 +24,30 @@ export class AISignalEngine extends EventEmitter {
         { id: '0xSPACEX_MARS', question: 'Will SpaceX land Starship on Mars by 2028?', prob: 0.82, category: TradeCategory.TECHNOLOGY, keywords: ['spacex', 'starship', 'mars'], volume: 90000, endDate: '2028-12-31T23:59:59Z' },
     ];
 
+    /**
+     * Replace the hardcoded market catalogue with live-scanned markets.
+     * Each market's keywords are auto-generated from the question text.
+     */
+    public hydrateMarkets(markets: { conditionId: string; question: string; category: TradeCategory; volume: number; endDate: string; yesMidpoint: number }[]) {
+        const hydrated: CandidateMarket[] = markets.map(m => ({
+            id: m.conditionId,
+            question: m.question,
+            prob: m.yesMidpoint,
+            category: m.category,
+            keywords: m.question.toLowerCase()
+                .replace(/[^a-z0-9\s]/g, '')
+                .split(/\s+/)
+                .filter(w => w.length > 3),
+            volume: m.volume,
+            endDate: m.endDate
+        }));
+
+        if (hydrated.length > 0) {
+            this.activeMarkets = hydrated;
+            logger.info(`[AISignalEngine] Hydrated with ${hydrated.length} live markets for headline matching.`);
+        }
+    }
+
     constructor() {
         super();
         logger.info('AISignalEngine initialized.');
