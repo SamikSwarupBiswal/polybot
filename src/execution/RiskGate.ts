@@ -6,6 +6,7 @@ import { PerformanceTracker } from '../analytics/PerformanceTracker.js';
 export interface TradeSignal {
     mode: 'COPY_TRADE' | 'AI_SIGNAL';
     market_id: string;
+    outcome_token_id?: string;
     market_question: string;
     category: TradeCategory;
     side: 'YES' | 'NO';
@@ -29,11 +30,14 @@ export class RiskGate {
     private readonly maxCategoryExposurePct = 0.25;
     private readonly maxOpenPositions = 15;
     private readonly minMarketVolumeUsd = 50000;
+    private readonly highLiquidityVolumeUsd = 250000;
     private readonly minWhaleTradeUsd = 5000;
     private readonly maxWhaleFollowUsd = 2000;
     private readonly minHoursToResolution = 48;
     private readonly minTradeSizeUsd = 10;
-    private readonly defaultMaxLossPerTradePct = 0.50;
+    private readonly conservativeMaxLossPerTradePct = 0.25;
+    private readonly defaultMaxLossPerTradePct = 0.30;
+    private readonly highConvictionMaxLossPerTradePct = 0.50;
     private readonly basePortfolioRiskPct = 0.01;
     private readonly maxPortfolioRiskPct = 0.02;
     private readonly maxStakePct = 0.035;
@@ -45,6 +49,7 @@ export class RiskGate {
      */
     public evaluateSignal(signal: TradeSignal, wallet: VirtualWallet): number {
         logger.verbose(`[RiskGate] Evaluating signal for ${signal.market_id} (${signal.side})`);
+        signal.max_loss_pct = this.resolveMaxLossPct(signal);
 
         // 1. Check Drawdown Limit cutoff
         const metrics = PerformanceTracker.getMetrics(wallet);
@@ -152,6 +157,27 @@ export class RiskGate {
 
     private getMaxLossPct(signal: TradeSignal): number {
         return Math.min(Math.max(signal.max_loss_pct ?? this.defaultMaxLossPerTradePct, 0.05), 1);
+    }
+
+    private resolveMaxLossPct(signal: TradeSignal): number {
+        if (typeof signal.max_loss_pct === 'number') {
+            return Math.min(Math.max(signal.max_loss_pct, 0.05), this.highConvictionMaxLossPerTradePct);
+        }
+
+        const edgePct = this.estimateEdgePct(signal);
+        const isHighConfidence = signal.confidence >= 0.85;
+        const isHighLiquidity = (signal.market_volume_usd || 0) >= this.highLiquidityVolumeUsd;
+        const hasStrongEdge = edgePct >= 0.15 || signal.mode === 'COPY_TRADE';
+
+        if (isHighConfidence && isHighLiquidity && hasStrongEdge) {
+            return this.highConvictionMaxLossPerTradePct;
+        }
+
+        if (signal.confidence < 0.7 || (signal.market_volume_usd || 0) < this.highLiquidityVolumeUsd) {
+            return this.conservativeMaxLossPerTradePct;
+        }
+
+        return this.defaultMaxLossPerTradePct;
     }
 
     private estimateEdgePct(signal: TradeSignal): number {

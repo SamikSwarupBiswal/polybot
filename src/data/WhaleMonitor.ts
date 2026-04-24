@@ -103,6 +103,7 @@ export class WhaleMonitor extends EventEmitter {
                     const signal: TradeSignal = {
                         mode: 'COPY_TRADE',
                         market_id: trade.conditionId,
+                        outcome_token_id: trade.asset || trade.assetId || trade.asset_id,
                         market_question: market.question || trade.title || 'Unknown Polymarket market',
                         category: market.category,
                         side: outcome === 'NO' ? 'NO' : 'YES',
@@ -111,7 +112,6 @@ export class WhaleMonitor extends EventEmitter {
                         source: wallet,
                         confidence: 0.9,
                         force_maker: true,
-                        max_loss_pct: 0.50,
                         market_volume_usd: market.volume,
                         market_end_date: market.endDate,
                         whale_trade_size_usd: whaleSize
@@ -196,6 +196,7 @@ export class WhaleMonitor extends EventEmitter {
         const rawSignal: TradeSignal = {
             mode: 'COPY_TRADE',
             market_id: '0xMARKET_SIM_' + Math.floor(Math.random() * 1000),
+            outcome_token_id: undefined,
             market_question: 'Will Ethereum hit $4000 in Q2 2026?',
             category: TradeCategory.CRYPTO,
             side: simulatedSide,
@@ -204,7 +205,6 @@ export class WhaleMonitor extends EventEmitter {
             source: wallet,
             confidence: 0.95,
             force_maker: true,
-            max_loss_pct: 0.50,
             market_volume_usd: 150000,
             market_end_date: '2026-06-30T23:59:59Z',
             whale_trade_size_usd: simulatedInvestment

@@ -11,8 +11,9 @@ This project should treat Polymarket prices as probability estimates and only tr
 - Minimum time to market end: 48 hours.
 - Minimum whale trade copied: $5,000 source trade size.
 - Maximum whale follow size: $2,000.
-- Per-trade planned max loss: 50% of that trade's stake using a paper stop-loss price.
+- Per-trade planned max loss: 25% for conservative/low-liquidity trades, 30% for normal trades, and up to 50% only for high-confidence, high-liquidity trades.
 - Bankroll sizing: base bet is intentionally small, shrinks during drawdowns, and is capped even when the wallet grows.
+- Open-position monitoring: poll CLOB SELL prices every 60 seconds by default, configurable with `POSITION_MONITOR_INTERVAL_MS`.
 
 ## Useful Trading Inputs
 

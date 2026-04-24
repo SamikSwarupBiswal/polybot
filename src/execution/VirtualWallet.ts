@@ -8,6 +8,7 @@ export interface TradeRecord {
     trade_id: string;
     mode: 'COPY_TRADE' | 'AI_SIGNAL' | 'MANUAL_TEST';
     market_id: string;
+    outcome_token_id?: string | null;
     market_question: string;
     category: TradeCategory;
     side: 'YES' | 'NO';

@@ -53,6 +53,7 @@ export class SignalAggregator {
             this.executor.executeSignal(
                 signal.mode,
                 signal.market_id,
+                signal.outcome_token_id,
                 signal.market_question,
                 signal.category,
                 signal.side,

@@ -4,6 +4,7 @@ dotenv.config();
 import { logger } from './utils/logger.js';
 import { VirtualWallet } from './execution/VirtualWallet.js';
 import { PaperTradeExecutor } from './execution/PaperTradeExecutor.js';
+import { PositionMonitor } from './execution/PositionMonitor.js';
 import { WhaleMonitor } from './data/WhaleMonitor.js';
 import { RiskGate } from './execution/RiskGate.js';
 import { SignalAggregator } from './execution/SignalAggregator.js';
@@ -21,6 +22,7 @@ async function main() {
 
     // 2. Setup Paper Trader
     const executor = new PaperTradeExecutor(wallet);
+    const positionMonitor = new PositionMonitor(wallet);
 
     // 3. Setup Strategy Components
     const riskGate = new RiskGate();
@@ -34,6 +36,7 @@ async function main() {
     newsService.on('news_headline', (headline: string) => aiEngine.processNews(headline));
     monitor.startPolling();
     newsService.startPolling();
+    positionMonitor.startPolling();
 
     // 5. Dashboard Heartbeat. Paper trades should only resolve from a real
     // market-resolution path or explicit test helper, never random outcomes.
@@ -47,6 +50,7 @@ async function main() {
         clearInterval(dashboardInterval);
         monitor.stopPolling();
         newsService.stopPolling();
+        positionMonitor.stopPolling();
         
         // Final report generation
         DashboardReporter.printTerminalDashboard(wallet);

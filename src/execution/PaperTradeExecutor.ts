@@ -18,6 +18,7 @@ export class PaperTradeExecutor {
     public executeSignal(
         mode: 'COPY_TRADE' | 'AI_SIGNAL' | 'MANUAL_TEST',
         marketId: string,
+        outcomeTokenId: string | undefined,
         marketQuestion: string,
         category: TradeCategory,
         side: 'YES' | 'NO',
@@ -48,6 +49,7 @@ export class PaperTradeExecutor {
             const trade = this.wallet.logTrade({
                 mode,
                 market_id: marketId,
+                outcome_token_id: outcomeTokenId || null,
                 market_question: marketQuestion,
                 category,
                 side,
