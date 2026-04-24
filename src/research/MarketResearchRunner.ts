@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { MarketScanner } from './MarketScanner.js';
 import { OrderbookAnalyzer } from './OrderbookAnalyzer.js';
 import { OpportunityScorer, ScoredMarket } from './OpportunityScorer.js';
+import { PriceHistoryStore } from '../data/PriceHistoryStore.js';
 import { TradeSignal } from '../execution/RiskGate.js';
 
 /**
@@ -16,6 +17,7 @@ export class MarketResearchRunner extends EventEmitter {
     private readonly scanner: MarketScanner;
     private readonly analyzer: OrderbookAnalyzer;
     private readonly scorer: OpportunityScorer;
+    private readonly priceHistory: PriceHistoryStore;
     private readonly intervalMs: number;
     private readonly signalsPerCycle: number;
     private intervalId: NodeJS.Timeout | null = null;
@@ -32,6 +34,7 @@ export class MarketResearchRunner extends EventEmitter {
         signalCooldownMs?: number;
         maxPages?: number;
         minVolumeUsd?: number;
+        priceHistory?: PriceHistoryStore;
     }) {
         super();
         this.intervalMs = opts?.intervalMs ?? 15 * 60 * 1000;       // 15 min
@@ -44,6 +47,7 @@ export class MarketResearchRunner extends EventEmitter {
         });
         this.analyzer = new OrderbookAnalyzer();
         this.scorer = new OpportunityScorer({ topN: 20 });
+        this.priceHistory = opts?.priceHistory ?? new PriceHistoryStore();
     }
 
     public startPolling() {
@@ -81,6 +85,9 @@ export class MarketResearchRunner extends EventEmitter {
             // Step 2: Price them via CLOB (limit to top 80 by volume to stay within rate limits)
             const sortedByVolume = [...candidates].sort((a, b) => b.volume - a.volume).slice(0, 80);
             const pricedMarkets = await this.analyzer.analyze(sortedByVolume);
+
+            // Step 2.5: Record price snapshots for history-based signals
+            this.priceHistory.record(pricedMarkets);
 
             // Step 3: Score and rank
             const ranked = this.scorer.rank(pricedMarkets);

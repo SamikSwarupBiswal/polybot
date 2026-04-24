@@ -71,7 +71,8 @@ export class SignalAggregator {
                 signal.source,
                 signal.confidence,
                 signal.force_maker,
-                signal.max_loss_pct
+                signal.max_loss_pct,
+                signal.market_end_date
             );
         }
     }

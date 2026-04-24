@@ -1,5 +1,6 @@
 import { VirtualWallet } from './VirtualWallet.js';
 import { FeeSimulator, TradeCategory } from './FeeSimulator.js';
+import { ExitStrategy } from './ExitStrategy.js';
 import { logger } from '../utils/logger.js';
 
 export class PaperTradeExecutor {
@@ -27,7 +28,8 @@ export class PaperTradeExecutor {
         signalSource: string,
         confidence: number,
         forceMaker: boolean = true,
-        maxLossPct: number = 0.50
+        maxLossPct: number = 0.50,
+        marketEndDate?: string
     ) {
         try {
             // Apply slippage penalty (we assume the price might cost slightly more to get filled)
@@ -42,6 +44,7 @@ export class PaperTradeExecutor {
             const fee = FeeSimulator.calculateFee(notionalCost, forceMaker, category);
             const safeMaxLossPct = Math.min(Math.max(maxLossPct, 0.05), 1);
             const stopLossPrice = Math.max(entryPrice * (1 - safeMaxLossPct), 0.001);
+            const takeProfitPrice = ExitStrategy.calculateTakeProfitPrice(entryPrice, safeMaxLossPct);
             const maxLossUsd = (notionalCost + fee) * safeMaxLossPct;
 
             logger.info(`PaperTradeExecutor taking signal [${mode}] for ${marketId} - side: ${side}`);
@@ -60,9 +63,13 @@ export class PaperTradeExecutor {
                 max_loss_pct: safeMaxLossPct,
                 max_loss_usd: maxLossUsd,
                 stop_loss_price: stopLossPrice,
+                take_profit_price: takeProfitPrice,
+                high_water_mark: entryPrice,
+                trailing_stop_active: false,
+                market_end_date: marketEndDate,
                 signal_source: signalSource,
                 signal_confidence: confidence,
-                notes: `Simulated trade targeting limit execution at ~$${entryPrice.toFixed(3)}/share with a stop-loss near $${stopLossPrice.toFixed(3)}.`
+                notes: `Simulated trade targeting limit execution at ~$${entryPrice.toFixed(3)}/share. Stop: $${stopLossPrice.toFixed(3)}, Take-profit: $${takeProfitPrice.toFixed(3)}.`
             });
 
             return trade;

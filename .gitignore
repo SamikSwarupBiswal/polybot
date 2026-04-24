@@ -5,6 +5,7 @@ coverage/
 reports/
 *.log
 ledger.json
+price_history.json
 polybot-report.html
 graphify-out/
 src/graphify-out/

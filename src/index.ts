@@ -13,6 +13,7 @@ import { AISignalEngine } from './strategy/AISignalEngine.js';
 import { DashboardReporter } from './analytics/DashboardReporter.js';
 import { MarketResearchRunner } from './research/MarketResearchRunner.js';
 import { MarketResolutionMonitor } from './research/MarketResolutionMonitor.js';
+import { PriceHistoryStore } from './data/PriceHistoryStore.js';
 
 async function main() {
     logger.info('===================================================');
@@ -34,12 +35,14 @@ async function main() {
     const aiEngine = new AISignalEngine();
     const aggregator = new SignalAggregator(monitor, aiEngine, executor, riskGate, wallet);
 
-    // 4. Setup Research Layer (NEW: scans real Polymarket for opportunities)
+    // 4. Setup Research Layer (scans real Polymarket for opportunities)
+    const priceHistory = new PriceHistoryStore();
     const researchRunner = new MarketResearchRunner({
         intervalMs: 15 * 60 * 1000,  // Scan every 15 minutes
         signalsPerCycle: 5,           // Emit up to 5 signals per cycle
         maxPages: 10,                 // Scan up to 1000 markets
-        minVolumeUsd: 50000           // Only markets with >= $50K volume
+        minVolumeUsd: 50000,          // Only markets with >= $50K volume
+        priceHistory                  // Share price history across components
     });
     const resolutionMonitor = new MarketResolutionMonitor(wallet, 5 * 60 * 1000); // Check resolutions every 5 min
 

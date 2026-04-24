@@ -19,6 +19,10 @@ export interface TradeRecord {
     max_loss_pct?: number;
     max_loss_usd?: number;
     stop_loss_price?: number;
+    take_profit_price?: number;
+    high_water_mark?: number;
+    trailing_stop_active?: boolean;
+    market_end_date?: string;
     signal_source: string;
     signal_confidence: number;
     timestamp: string;
@@ -26,7 +30,7 @@ export interface TradeRecord {
     status: 'OPEN' | 'CLOSED_WIN' | 'CLOSED_LOSS' | 'CLOSED_EXIT' | 'EXPIRED';
     resolution_price: number | null;
     exit_price?: number | null;
-    exit_reason?: 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL_EXIT' | null;
+    exit_reason?: 'STOP_LOSS' | 'TAKE_PROFIT' | 'TRAILING_STOP' | 'TIME_EXIT' | 'STALE_SIGNAL' | 'MANUAL_EXIT' | null;
     pnl: number | null;
     notes: string;
 }
@@ -179,10 +183,26 @@ export class VirtualWallet {
         this.saveLedger();
     }
 
+    /** Update the high water mark for a trade (used for trailing stop). */
+    public updateHighWaterMark(tradeId: string, currentPrice: number): void {
+        const trade = this.ledger.trades.find(t => t.trade_id === tradeId);
+        if (!trade || trade.status !== 'OPEN') return;
+
+        const current = trade.high_water_mark ?? trade.entry_price;
+        if (currentPrice > current) {
+            trade.high_water_mark = currentPrice;
+            // Activate trailing stop once price is 15%+ above entry
+            if (currentPrice > trade.entry_price * 1.15) {
+                trade.trailing_stop_active = true;
+            }
+            this.saveLedger();
+        }
+    }
+
     public closeTradeAtPrice(
         tradeId: string,
         exitPrice: number,
-        reason: 'STOP_LOSS' | 'TAKE_PROFIT' | 'MANUAL_EXIT' = 'MANUAL_EXIT'
+        reason: 'STOP_LOSS' | 'TAKE_PROFIT' | 'TRAILING_STOP' | 'TIME_EXIT' | 'STALE_SIGNAL' | 'MANUAL_EXIT' = 'MANUAL_EXIT'
     ) {
         const trade = this.ledger.trades.find(t => t.trade_id === tradeId);
         if (!trade || trade.status !== 'OPEN') {
