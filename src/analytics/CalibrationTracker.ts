@@ -351,6 +351,13 @@ export class CalibrationTracker {
     }
 
     private save(): void {
+        // Non-blocking async write
+        fs.promises.writeFile(this.filePath, JSON.stringify(this.entries, null, 2), 'utf8')
+            .catch(err => logger.error(`[Calibration] Failed to save: ${err.message}`));
+    }
+
+    /** Synchronous save for graceful shutdown — ensures data is flushed before exit. */
+    public saveSync(): void {
         fs.writeFileSync(this.filePath, JSON.stringify(this.entries, null, 2), 'utf8');
     }
 }

@@ -10,3 +10,6 @@ calibration.json
 polybot-report.html
 graphify-out/
 src/graphify-out/
+
+# Local Netlify folder
+.netlify

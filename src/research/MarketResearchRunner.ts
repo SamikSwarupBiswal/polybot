@@ -70,6 +70,11 @@ export class MarketResearchRunner extends EventEmitter {
         return this.calibration;
     }
 
+    /** Expose LLM provider for session stats logging. */
+    public getLLM(): LLMSignalProvider {
+        return this.llm;
+    }
+
     public startPolling() {
         logger.info(`[MarketResearch] Starting Tier 3 pipeline every ${Math.round(this.intervalMs / 60000)} minutes.`);
         this.intervalId = setInterval(() => {
@@ -100,6 +105,15 @@ export class MarketResearchRunner extends EventEmitter {
         try {
             // ─── Step 1: Scan markets ─────────────────────────────
             const candidates = await this.scanner.scan();
+            
+            // Emit for external mechanical strategies (e.g. DipArbitrage)
+            this.emit('marketsScanned', candidates.map(c => ({
+                market_id: c.conditionId,
+                question: c.question,
+                category: c.category,
+                tokens: c.tokens.map(t => ({ tokenId: t.token_id, outcome: t.outcome }))
+            })));
+
             if (candidates.length === 0) {
                 logger.warn('[MarketResearch] No candidate markets found. Skipping cycle.');
                 return [];

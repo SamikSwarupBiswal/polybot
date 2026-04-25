@@ -217,6 +217,14 @@ export class PriceHistoryStore {
 
     private save() {
         this.data.lastSaved = Date.now();
+        // Non-blocking async write — critical for large history files (50MB+)
+        fs.promises.writeFile(this.filePath, JSON.stringify(this.data), 'utf8')
+            .catch(err => logger.error(`[PriceHistory] Failed to save: ${err.message}`));
+    }
+
+    /** Synchronous save for graceful shutdown — ensures data is flushed before exit. */
+    public saveSync() {
+        this.data.lastSaved = Date.now();
         fs.writeFileSync(this.filePath, JSON.stringify(this.data), 'utf8');
     }
 }

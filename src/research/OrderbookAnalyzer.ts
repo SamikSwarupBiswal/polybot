@@ -1,5 +1,5 @@
-import axios from 'axios';
 import { logger } from '../utils/logger.js';
+import { apiCallWithRetry } from '../utils/apiRetry.js';
 import { CandidateMarket } from './MarketScanner.js';
 
 const CLOB_API_URL = process.env.CLOB_API_URL || 'https://clob.polymarket.com';
@@ -12,7 +12,9 @@ export interface OrderbookSnapshot {
     bestAsk: number;
     spread: number;        // bestAsk - bestBid
     spreadPct: number;     // spread / midpoint (as fraction, not %)
-    isLiquid: boolean;     // spread < 4¢
+    bidsDepth5Pct: number; // USD volume of bids within 5% of midpoint
+    asksDepth5Pct: number; // USD volume of asks within 5% of midpoint
+    isLiquid: boolean;     // spread < 4¢ and sufficient depth
 }
 
 export interface PricedMarket {
@@ -71,45 +73,63 @@ export class OrderbookAnalyzer {
 
     private async fetchSnapshot(tokenId: string, outcome: string): Promise<OrderbookSnapshot | null> {
         try {
-            // Fetch midpoint and both sides in parallel where possible
-            const [midRes, bidRes, askRes] = await Promise.all([
-                axios.get(`${CLOB_API_URL}/midpoint`, {
+            const tokenLabel = tokenId.substring(0, 12);
+            // Fetch midpoint and full orderbook depth in parallel
+            const [midRes, bookRes] = await Promise.all([
+                apiCallWithRetry({
+                    method: 'get',
+                    url: `${CLOB_API_URL}/midpoint`,
                     params: { token_id: tokenId },
                     timeout: 8000
-                }).catch(() => null),
-                axios.get(`${CLOB_API_URL}/price`, {
-                    params: { token_id: tokenId, side: 'SELL' },
+                }, { label: `CLOB midpoint ${tokenLabel}` }),
+                apiCallWithRetry({
+                    method: 'get',
+                    url: `${CLOB_API_URL}/book`,
+                    params: { token_id: tokenId },
                     timeout: 8000
-                }).catch(() => null),
-                axios.get(`${CLOB_API_URL}/price`, {
-                    params: { token_id: tokenId, side: 'BUY' },
-                    timeout: 8000
-                }).catch(() => null),
+                }, { label: `CLOB book ${tokenLabel}` })
             ]);
 
             const midpoint = OrderbookAnalyzer.extractPrice(midRes?.data);
-            const bestBid = OrderbookAnalyzer.extractPrice(bidRes?.data);
-            const bestAsk = OrderbookAnalyzer.extractPrice(askRes?.data);
-
-            if (midpoint === null) {
-                logger.debug(`[OrderbookAnalyzer] No midpoint for token ${tokenId.substring(0, 12)}...`);
+            if (midpoint === null || midpoint === 0) {
+                logger.debug(`[OrderbookAnalyzer] No valid midpoint for token ${tokenLabel}...`);
                 return null;
             }
 
-            const safeAsk = bestAsk ?? midpoint;
-            const safeBid = bestBid ?? midpoint;
-            const spread = Math.max(0, safeAsk - safeBid);
-            const spreadPct = midpoint > 0 ? spread / midpoint : 1;
+            const bids: { price: number; size: number }[] = (bookRes?.data?.bids || []).map((b: any) => ({ price: Number(b.price), size: Number(b.size) }));
+            const asks: { price: number; size: number }[] = (bookRes?.data?.asks || []).map((a: any) => ({ price: Number(a.price), size: Number(a.size) }));
+
+            // Sort appropriately: highest bid first, lowest ask first
+            bids.sort((a, b) => b.price - a.price);
+            asks.sort((a, b) => a.price - b.price);
+
+            const bestBid = bids.length > 0 ? bids[0].price : midpoint;
+            const bestAsk = asks.length > 0 ? asks[0].price : midpoint;
+            const spread = Math.max(0, bestAsk - bestBid);
+            const spreadPct = spread / midpoint;
+
+            // Calculate 5% depth
+            const fivePct = midpoint * 0.05;
+            const minBidPrice = midpoint - fivePct;
+            const maxAskPrice = midpoint + fivePct;
+
+            const bidsDepth5Pct = bids.filter(b => b.price >= minBidPrice).reduce((sum, b) => sum + (b.price * b.size), 0);
+            const asksDepth5Pct = asks.filter(a => a.price <= maxAskPrice).reduce((sum, a) => sum + (a.price * a.size), 0);
+
+            // A market is liquid if spread is < 4¢ AND there is more than $100 depth within 5% of midpoint
+            const isLiquid = spread < 0.04 && Math.min(bidsDepth5Pct, asksDepth5Pct) > 100;
 
             return {
                 tokenId,
                 outcome,
                 midpoint,
-                bestBid: safeBid,
-                bestAsk: safeAsk,
+                bestBid,
+                bestAsk,
                 spread,
                 spreadPct,
-                isLiquid: spread < 0.04
+                bidsDepth5Pct,
+                asksDepth5Pct,
+                isLiquid
             };
         } catch (error: any) {
             logger.debug(`[OrderbookAnalyzer] Failed to fetch CLOB data for ${tokenId.substring(0, 12)}: ${error.message}`);

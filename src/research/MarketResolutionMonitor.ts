@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { apiCallWithRetry } from '../utils/apiRetry.js';
 import { VirtualWallet } from '../execution/VirtualWallet.js';
 import { CalibrationTracker } from '../analytics/CalibrationTracker.js';
 import { logger } from '../utils/logger.js';
@@ -84,10 +84,14 @@ export class MarketResolutionMonitor {
 
     private async checkMarketResolution(conditionId: string): Promise<{ winningOutcome: string } | null> {
         try {
-            const response = await axios.get(`${GAMMA_API_URL}/markets`, {
+            const response = await apiCallWithRetry({
+                method: 'get',
+                url: `${GAMMA_API_URL}/markets`,
                 params: { condition_ids: conditionId, limit: 1 },
                 timeout: 10000
-            });
+            }, { label: `Resolution check ${conditionId.substring(0, 12)}` });
+
+            if (!response) return null;
 
             const market = Array.isArray(response.data) ? response.data[0] : null;
             if (!market) return null;

@@ -225,7 +225,7 @@ export class EdgeEstimator {
         }
 
         // Spread edge
-        weightedSum += (spreadEdge - 0.5) * 0.1 * SIGNAL_WEIGHTS.spreadEdge;
+        weightedSum += (spreadEdge - 0.5) * 0.5 * SIGNAL_WEIGHTS.spreadEdge;
         totalWeight += SIGNAL_WEIGHTS.spreadEdge;
         signalCount++;
 

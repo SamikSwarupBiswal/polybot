@@ -108,10 +108,19 @@ export class ExitStrategy {
     }
 
     private static checkTimeExit(trade: TradeRecord): ExitResult | null {
-        // Check if the trade record has market_end_date info in its notes or other fields
-        // We rely on the market_end_date being stored — but TradeRecord doesn't directly have it.
-        // For now, this is handled externally by PositionMonitor which has access to market metadata.
-        // This method is a placeholder for when TradeRecord gets a market_end_date field.
+        const endDate = trade.market_end_date;
+        if (!endDate) return null;
+
+        const endMs = new Date(endDate).getTime();
+        if (Number.isNaN(endMs)) return null;
+
+        const hoursUntilEnd = (endMs - Date.now()) / (1000 * 60 * 60);
+        if (hoursUntilEnd <= TIME_EXIT_HOURS && hoursUntilEnd > 0) {
+            return {
+                reason: 'TIME_EXIT',
+                message: `Market resolves in ${hoursUntilEnd.toFixed(1)}h (< ${TIME_EXIT_HOURS}h threshold). Exiting to avoid settlement risk.`
+            };
+        }
         return null;
     }
 

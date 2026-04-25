@@ -14,6 +14,10 @@ export class SignalAggregator {
     private riskGate: RiskGate;
     private wallet: VirtualWallet;
 
+    /** Deduplication: tracks recently-processed market_ids with timestamps */
+    private readonly recentlyProcessed = new Map<string, number>();
+    private readonly dedupCooldownMs = 60 * 60 * 1000; // 60 minutes
+
     constructor(
         monitor: WhaleMonitor,
         aiEngine: AISignalEngine,
@@ -53,12 +57,25 @@ export class SignalAggregator {
         });
     }
 
+    public processSignal(signal: TradeSignal) {
+        this.processRouting(signal);
+    }
+
     private processRouting(signal: TradeSignal) {
+        // Dedup: skip if same market_id was processed recently
+        this.cleanupDedup();
+        const lastProcessed = this.recentlyProcessed.get(signal.market_id);
+        if (lastProcessed && Date.now() - lastProcessed < this.dedupCooldownMs) {
+            logger.debug(`[SignalAggregator] DEDUP: Skipping ${signal.market_id} — already processed ${Math.round((Date.now() - lastProcessed) / 60000)}m ago.`);
+            return;
+        }
+
         // 1. Evaluate Risk
         const approvedSize = this.riskGate.evaluateSignal(signal, this.wallet);
 
         // 2. Execute if approved
         if (approvedSize > 0) {
+            this.recentlyProcessed.set(signal.market_id, Date.now());
             this.executor.executeSignal(
                 signal.mode,
                 signal.market_id,
@@ -74,6 +91,15 @@ export class SignalAggregator {
                 signal.max_loss_pct,
                 signal.market_end_date
             );
+        }
+    }
+
+    private cleanupDedup() {
+        const now = Date.now();
+        for (const [key, ts] of this.recentlyProcessed) {
+            if (now - ts > this.dedupCooldownMs * 2) {
+                this.recentlyProcessed.delete(key);
+            }
         }
     }
 }

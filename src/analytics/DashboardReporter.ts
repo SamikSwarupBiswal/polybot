@@ -168,8 +168,9 @@ export class DashboardReporter {
         </html>
         `;
 
-        fs.writeFileSync('polybot-report.html', html, 'utf-8');
-        logger.info('Saved HTML dashboard to polybot-report.html');
+        fs.promises.writeFile('polybot-report.html', html, 'utf-8')
+            .then(() => logger.info('Saved HTML dashboard to polybot-report.html'))
+            .catch(err => logger.error(`Failed to save HTML report: ${err.message}`));
     }
 
     private static escapeHtml(value: string): string {

@@ -1,6 +1,6 @@
-import axios from 'axios';
 import { logger } from '../utils/logger.js';
 import { TradeCategory } from '../execution/FeeSimulator.js';
+import { apiCallWithRetry } from '../utils/apiRetry.js';
 
 const GAMMA_API_URL = process.env.GAMMA_API_URL || 'https://gamma-api.polymarket.com';
 
@@ -55,27 +55,29 @@ export class MarketScanner {
         const allRaw: any[] = [];
 
         for (let page = 0; page < this.maxPages; page++) {
-            try {
-                const response = await axios.get(`${GAMMA_API_URL}/markets`, {
-                    params: {
-                        active: true,
-                        closed: false,
-                        limit: this.pageSize,
-                        offset: page * this.pageSize
-                    },
-                    timeout: 15000
-                });
+            const response = await apiCallWithRetry({
+                method: 'get',
+                url: `${GAMMA_API_URL}/markets`,
+                params: {
+                    active: true,
+                    closed: false,
+                    limit: this.pageSize,
+                    offset: page * this.pageSize
+                },
+                timeout: 15000
+            }, { label: `Gamma markets page ${page}` });
 
-                const batch = Array.isArray(response.data) ? response.data : [];
-                if (batch.length === 0) break; // No more pages
-                allRaw.push(...batch);
-
-                // Small delay to be nice to the API
-                await MarketScanner.sleep(100);
-            } catch (error: any) {
-                logger.error(`[MarketScanner] Gamma API page ${page} failed: ${error.message}`);
+            if (!response) {
+                logger.error(`[MarketScanner] Gamma API page ${page} failed after retries.`);
                 break;
             }
+
+            const batch = Array.isArray(response.data) ? response.data : [];
+            if (batch.length === 0) break; // No more pages
+            allRaw.push(...batch);
+
+            // Small delay to be nice to the API
+            await MarketScanner.sleep(100);
         }
 
         logger.info(`[MarketScanner] Fetched ${allRaw.length} raw markets from Gamma API.`);

@@ -144,13 +144,19 @@ export class OpportunityScorer {
         else if (spread >= 0.06) spreadQuality = 0.0;
         else spreadQuality = 1.0 - (spread - 0.02) / 0.04;
 
-        // --- Volume activity: placeholder (TODO: add 24h volume if Gamma provides it) ---
-        // For now, use absolute volume tiers
+        // --- Volume activity: relative to the median volume (activity signal) ---
+        // This measures how "active" a market is compared to the typical market.
+        // Unlike the `liquidity` percentile rank, this captures absolute activity level.
+        const medianIdx = Math.floor(sortedVolumes.length / 2);
+        const medianVolume = sortedVolumes[medianIdx] || 100000;
         let volumeActivity: number;
-        if (m.volume >= 500000) volumeActivity = 1.0;
-        else if (m.volume >= 250000) volumeActivity = 0.8;
-        else if (m.volume >= 100000) volumeActivity = 0.6;
-        else volumeActivity = 0.4;
+        if (medianVolume > 0) {
+            // Ratio-based: 2x median = 1.0, 0.5x median = 0.4
+            const ratio = m.volume / medianVolume;
+            volumeActivity = Math.min(1.0, Math.max(0.2, 0.4 + ratio * 0.3));
+        } else {
+            volumeActivity = 0.5;
+        }
 
         // --- Price range: extreme prices score lower ---
         const yesPrice = pm.yesMidpoint;

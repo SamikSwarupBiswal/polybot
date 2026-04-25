@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
 import { TradeCategory } from '../execution/FeeSimulator.js';
 import { TradeSignal } from '../execution/RiskGate.js';
+import { LLMSignalProvider, NewsImpactEstimate } from './LLMSignalProvider.js';
 
 type CandidateMarket = {
     id: string;
@@ -48,68 +49,67 @@ export class AISignalEngine extends EventEmitter {
         }
     }
 
-    constructor() {
+    private readonly llm: LLMSignalProvider;
+
+    constructor(llm: LLMSignalProvider) {
         super();
-        logger.info('AISignalEngine initialized.');
+        this.llm = llm;
+        logger.info('AISignalEngine initialized with LLM capability.');
     }
 
-    public processNews(headline: string) {
+    public async processNews(headline: string): Promise<void> {
         logger.debug(`[AISignalEngine] Processing headline: "${headline}"`);
 
-        const normalizedHeadline = headline.toLowerCase();
-        const match = this.activeMarkets
-            .map(market => ({
-                market,
-                score: market.keywords.filter(keyword => normalizedHeadline.includes(keyword)).length
-            }))
-            .sort((a, b) => b.score - a.score)[0];
-
-        if (!match || match.score === 0) {
-            logger.debug('[AISignalEngine] No relevant market matched for headline.');
+        if (!this.llm.isEnabled() || this.activeMarkets.length === 0) {
+            logger.debug(`[AISignalEngine] LLM is disabled or no active markets. Skipping news processing.`);
             return;
         }
 
-        const market = match.market;
-        const modelProbability = this.estimateYesProbability(normalizedHeadline, market.prob);
-        const edge = Math.abs(modelProbability - market.prob);
-        const side: 'YES' | 'NO' = modelProbability >= market.prob ? 'YES' : 'NO';
-        const fairSidePrice = side === 'YES' ? modelProbability : 1 - modelProbability;
+        // To avoid exceeding token limits, we slice up to the first 15 markets
+        // In reality, you'd filter markets by some heuristic first, but LLM can handle ~15 easily short-text.
+        const targetMarkets = this.activeMarkets.slice(0, 15);
+        
+        logger.info(`[AISignalEngine] Evaluating news impact cross ${targetMarkets.length} markets...`);
+        const impacts = await this.llm.evaluateNewsImpact(headline, targetMarkets);
 
-        logger.verbose(`[AISignalEngine] Probability delta for ${market.id}: Market=${market.prob}, Model=${modelProbability}, Edge=${(edge * 100).toFixed(1)}%`);
+        for (const impact of impacts) {
+            if (impact.impact === 'NEUTRAL') continue;
 
-        if (edge <= 0.08) {
-            logger.debug(`[AISignalEngine] Rejected: Edge ${(edge * 100).toFixed(1)}% is below 8% threshold.`);
-            return;
+            const market = this.activeMarkets.find(m => m.id === impact.market_id);
+            if (!market) continue;
+
+            const edge = Math.abs(impact.newProbability - market.prob);
+            
+            logger.verbose(`[AISignalEngine] LLM Impact for ${market.id}: Market=${market.prob}, Model=${impact.newProbability}, Edge=${(edge * 100).toFixed(1)}%`);
+            logger.verbose(`[AISignalEngine] Reasoning: ${impact.reasoning}`);
+
+            if (edge <= 0.08) {
+                logger.debug(`[AISignalEngine] Rejected: Edge ${(edge * 100).toFixed(1)}% is below 8% threshold.`);
+                continue;
+            }
+
+            const side: 'YES' | 'NO' = impact.newProbability >= market.prob ? 'YES' : 'NO';
+            const fairSidePrice = side === 'YES' ? impact.newProbability : 1 - impact.newProbability;
+
+            const llmSignal: TradeSignal = {
+                mode: 'AI_SIGNAL',
+                market_id: market.id,
+                market_question: market.question,
+                category: market.category,
+                side,
+                requested_price: Math.min(Math.max(fairSidePrice, 0.01), 0.99),
+                recommended_size_usd: 1500, // Standard size for high-confidence AI
+                source: `News: ${headline.substring(0, 30)}...`,
+                confidence: 0.85, 
+                force_maker: true,
+                market_volume_usd: market.volume,
+                market_end_date: market.endDate,
+                current_market_price: side === 'YES' ? market.prob : 1 - market.prob,
+                model_probability: impact.newProbability
+            };
+
+            logger.info(`[AISignalEngine] STRATEGY APPROVED: Edge ${(edge * 100).toFixed(1)}% > 8%. Emitting ${side} signal for ${market.id}`);
+            this.emit('signal', llmSignal);
         }
-
-        const llmSignal: TradeSignal = {
-            mode: 'AI_SIGNAL',
-            market_id: market.id,
-            market_question: market.question,
-            category: market.category,
-            side,
-            requested_price: Math.min(Math.max(fairSidePrice, 0.01), 0.99),
-            recommended_size_usd: 1500,
-            source: `News: ${headline.substring(0, 30)}...`,
-            confidence: 0.85,
-            force_maker: true,
-            market_volume_usd: market.volume,
-            market_end_date: market.endDate,
-            current_market_price: side === 'YES' ? market.prob : 1 - market.prob,
-            model_probability: modelProbability
-        };
-
-        logger.info(`[AISignalEngine] STRATEGY APPROVED: Edge ${(edge * 100).toFixed(1)}% > 8%. Emitting ${side} signal for ${market.id}`);
-        this.emit('signal', llmSignal);
-    }
-
-    private estimateYesProbability(headline: string, currentProbability: number): number {
-        const positiveFlags = ['announces', 'secures', 'passes', 'cuts', 'successfully', 'approved', 'confirms', 'launching'];
-        const negativeFlags = ['denies', 'delays', 'fails', 'rejects', 'cancels', 'blocked', 'misses', 'lawsuit'];
-        const positiveScore = positiveFlags.filter(flag => headline.includes(flag)).length;
-        const negativeScore = negativeFlags.filter(flag => headline.includes(flag)).length;
-        const directionalMove = (positiveScore - negativeScore) * 0.18;
-
-        return Math.min(Math.max(currentProbability + directionalMove, 0.05), 0.95);
     }
 }

@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
     "dev": "node --loader ts-node/esm src/index.ts",
-    "test": "npm run typecheck"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -19,13 +20,14 @@
     "axios": "^1.15.2",
     "dotenv": "^17.4.2",
     "ethers": "^6.16.0",
-    "node-cron": "^4.2.1",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
-    "@types/node-cron": "^3.0.11",
+    "@types/ws": "^8.18.1",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   }
 }

@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { apiCallWithRetry } from '../utils/apiRetry.js';
 import { logger } from '../utils/logger.js';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -91,33 +91,29 @@ export class OrderFlowAnalyzer {
     // ─── Internals ──────────────────────────────────────────────
 
     private async fetchRecentTrades(tokenId: string): Promise<any[]> {
-        try {
-            // Polymarket Data API endpoint for trade history
-            const response = await axios.get(`${DATA_API_URL}/trades`, {
-                params: {
-                    asset_id: tokenId,
-                    limit: MAX_TRADES_TO_FETCH,
-                },
-                timeout: 10000
-            });
+        // Polymarket Data API endpoint for trade history
+        const response = await apiCallWithRetry({
+            method: 'get',
+            url: `${DATA_API_URL}/trades`,
+            params: {
+                asset_id: tokenId,
+                limit: MAX_TRADES_TO_FETCH,
+            },
+            timeout: 10000
+        }, { label: `OrderFlow trades ${tokenId.substring(0, 12)}` });
 
-            if (Array.isArray(response.data)) {
-                return response.data;
-            }
+        if (!response) return [];
 
-            // Some responses wrap in a data field
-            if (Array.isArray(response.data?.data)) {
-                return response.data.data;
-            }
-
-            return [];
-        } catch (error: any) {
-            // If endpoint doesn't exist or returns error, silently return empty
-            if (error.response?.status === 404 || error.response?.status === 400) {
-                return [];
-            }
-            throw error;
+        if (Array.isArray(response.data)) {
+            return response.data;
         }
+
+        // Some responses wrap in a data field
+        if (Array.isArray(response.data?.data)) {
+            return response.data.data;
+        }
+
+        return [];
     }
 
     private buildSnapshot(conditionId: string, tokenId: string, trades: any[]): OrderFlowSnapshot {

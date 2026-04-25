@@ -1,0 +1,173 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+:root {
+  /* Matrix Color Palette */
+  --matrix-bg: #030a05;
+  --matrix-bg-panel: rgba(5, 20, 10, 0.75);
+  --matrix-primary: #00ff41;
+  --matrix-primary-glow: rgba(0, 255, 65, 0.5);
+  --matrix-secondary: #008f11;
+  --matrix-muted: #003b00;
+  --matrix-danger: #ff003c;
+  --matrix-danger-glow: rgba(255, 0, 60, 0.5);
+  --matrix-warning: #ffb000;
+  --matrix-text: #e0ffe4;
+  --matrix-text-muted: #8abf94;
+  
+  --panel-border: 1px solid rgba(0, 255, 65, 0.2);
+  --panel-border-intense: 1px solid rgba(0, 255, 65, 0.6);
+  --panel-border-danger: 1px solid rgba(255, 0, 60, 0.4);
+  --glass-blur: blur(12px);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--matrix-bg);
+  color: var(--matrix-text);
+  overflow-x: hidden;
+  min-height: 100vh;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(0, 143, 17, 0.15) 0%, transparent 60%),
+    linear-gradient(to bottom, rgba(3, 10, 5, 0.9), rgba(3, 10, 5, 1)),
+    url('data:image/svg+xml;utf8,<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg"><rect width="20" height="20" fill="none" /><line x1="0" y1="0" x2="20" y2="20" stroke="rgba(0,255,65,0.03)" stroke-width="1" /></svg>');
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+code, .mono {
+  font-family: 'Space Mono', monospace;
+}
+
+/* Typography Enhancements */
+.text-glow {
+  text-shadow: 0 0 10px var(--matrix-primary-glow);
+}
+.text-danger-glow {
+  color: var(--matrix-danger);
+  text-shadow: 0 0 10px var(--matrix-danger-glow);
+}
+.text-primary { color: var(--matrix-primary); }
+.text-muted { color: var(--matrix-text-muted); }
+
+/* Glassmorphic Panels */
+.glass-panel {
+  background: var(--matrix-bg-panel);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: var(--panel-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  transition: all 0.3s ease;
+}
+
+.glass-panel:hover {
+  border: var(--panel-border-intense);
+  box-shadow: 0 8px 32px 0 rgba(0, 255, 65, 0.1);
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0% { box-shadow: 0 0 5px var(--matrix-primary-glow); }
+  50% { box-shadow: 0 0 20px var(--matrix-primary-glow); }
+  100% { box-shadow: 0 0 5px var(--matrix-primary-glow); }
+}
+
+@keyframes scanline {
+  0% { background-position: 0 -100vh; }
+  100% { background-position: 0 100vh; }
+}
+
+.scanline-overlay {
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.2));
+  background-size: 100% 4px;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.15;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--matrix-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--matrix-muted);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--matrix-secondary);
+}
+
+/* Layout Utilities */
+.app-container {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  min-height: 100vh;
+}
+
+.main-content {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.grid-cols-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+.grid-cols-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+}
+
+/* Status Badges */
+.badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badge-open {
+  background: rgba(0, 255, 65, 0.1);
+  color: var(--matrix-primary);
+  border: 1px solid var(--matrix-primary);
+}
+
+.badge-closed-win {
+  background: rgba(0, 143, 17, 0.2);
+  color: var(--matrix-text);
+  border: 1px solid var(--matrix-secondary);
+}
+
+.badge-closed-loss {
+  background: rgba(255, 0, 60, 0.1);
+  color: var(--matrix-danger);
+  border: 1px solid var(--matrix-danger);
+}

@@ -1,6 +1,6 @@
-import axios from 'axios';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
+import { apiCallWithRetry } from '../utils/apiRetry.js';
 import { TradeCategory } from '../execution/FeeSimulator.js';
 import { TradeSignal } from '../execution/RiskGate.js';
 
@@ -83,7 +83,11 @@ export class WhaleMonitor extends EventEmitter {
                 if (!isSkillful) continue;
 
                 if (!this.isRealWallet(wallet)) {
-                    this.emitMockTrade(wallet);
+                    if (process.env.ENABLE_MOCKS === 'true') {
+                        this.emitMockTrade(wallet);
+                    } else {
+                        logger.debug(`[WhaleMonitor] Skipping mock wallet ${wallet} — ENABLE_MOCKS is not true.`);
+                    }
                     continue;
                 }
 
@@ -127,10 +131,14 @@ export class WhaleMonitor extends EventEmitter {
     }
 
     private async fetchWhaleScore(wallet: string): Promise<WhaleScore> {
-        const response = await axios.get(`${this.DATA_API_URL}/positions`, {
+        const response = await apiCallWithRetry({
+            method: 'get',
+            url: `${this.DATA_API_URL}/positions`,
             params: { user: wallet },
             timeout: 10000
-        });
+        }, { label: `WhaleScore ${wallet.substring(0, 10)}` });
+
+        if (!response) return { pnl: 0, winRate: 0, sampleSize: 0 };
 
         const positions = Array.isArray(response.data) ? response.data : [];
         const scoredPositions = positions.filter((position: any) => Number.isFinite(Number(position.cashPnl ?? position.realizedPnl)));
@@ -151,7 +159,9 @@ export class WhaleMonitor extends EventEmitter {
         const start = this.lastPollByWallet.get(wallet) || nowSeconds - defaultLookbackSeconds;
         this.lastPollByWallet.set(wallet, nowSeconds);
 
-        const response = await axios.get(`${this.DATA_API_URL}/activity`, {
+        const response = await apiCallWithRetry({
+            method: 'get',
+            url: `${this.DATA_API_URL}/activity`,
             params: {
                 user: wallet,
                 type: 'TRADE',
@@ -162,19 +172,23 @@ export class WhaleMonitor extends EventEmitter {
                 sortDirection: 'ASC'
             },
             timeout: 10000
-        });
+        }, { label: `WhaleTrades ${wallet.substring(0, 10)}` });
 
-        return Array.isArray(response.data) ? response.data : [];
+        return Array.isArray(response?.data) ? response.data : [];
     }
 
     private async fetchMarketMetadata(conditionId: string): Promise<MarketMetadata> {
-        const response = await axios.get(`${this.GAMMA_API_URL}/markets`, {
+        const response = await apiCallWithRetry({
+            method: 'get',
+            url: `${this.GAMMA_API_URL}/markets`,
             params: {
                 condition_ids: conditionId,
                 limit: 1
             },
             timeout: 10000
-        });
+        }, { label: `MarketMeta ${conditionId.substring(0, 12)}` });
+
+        if (!response) return { question: '', category: TradeCategory.OTHER, volume: 0, endDate: '' };
 
         const market = Array.isArray(response.data) ? response.data[0] : null;
         return {

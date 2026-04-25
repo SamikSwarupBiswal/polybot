@@ -3,6 +3,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { logger } from '../utils/logger.js';
 import { TradeCategory } from './FeeSimulator.js';
+import { alertService, AlertLevel } from '../utils/AlertService.js';
 
 export interface TradeRecord {
     trade_id: string;
@@ -70,7 +71,14 @@ export class VirtualWallet {
     }
 
     private saveLedger(ledgerState: WalletLedger = this.ledger) {
-        fs.writeFileSync(this.ledgerPath, JSON.stringify(ledgerState, null, 2));
+        // Non-blocking async write — fire and forget with error logging
+        fs.promises.writeFile(this.ledgerPath, JSON.stringify(ledgerState, null, 2))
+            .catch(err => logger.error(`[VirtualWallet] Failed to save ledger: ${err.message}`));
+    }
+
+    /** Synchronous save for graceful shutdown — ensures data is flushed before exit. */
+    public save() {
+        fs.writeFileSync(this.ledgerPath, JSON.stringify(this.ledger, null, 2));
     }
 
     public getBalance(): number {
@@ -149,6 +157,13 @@ export class VirtualWallet {
         logger.info(`Logged Paper Trade [${newTrade.trade_id}]: ${newTrade.side} $${newTrade.shares.toFixed(2)} @ $${newTrade.entry_price.toFixed(3)}. Cost: $${costToDeduct.toFixed(2)}`);
         logger.info(`New Virtual Balance: $${this.ledger.balance.toFixed(2)}`);
 
+        // Send alert
+        alertService.sendAlert(
+            `Trade Opened: ${newTrade.market_id.substring(0, 8)}...`,
+            `**Action:** ${newTrade.side} at $${newTrade.entry_price.toFixed(3)}\n**Size:** $${newTrade.notional_cost.toFixed(2)}\n**Reason:** ${newTrade.signal_source}`,
+            AlertLevel.INFO
+        );
+
         return newTrade;
     }
 
@@ -181,6 +196,13 @@ export class VirtualWallet {
         }
 
         this.saveLedger();
+        
+        const pnl = trade.pnl ?? 0;
+        alertService.sendAlert(
+            `Market Resolved: ${won ? 'WIN' : 'LOSS'}`,
+            `**Market:** ${trade.market_id}\n**PnL:** $${pnl.toFixed(2)}\n**Balance:** $${this.ledger.balance.toFixed(2)}`,
+            won ? AlertLevel.SUCCESS : AlertLevel.WARNING
+        );
     }
 
     /** Update the high water mark for a trade (used for trailing stop). */
@@ -224,6 +246,12 @@ export class VirtualWallet {
 
         logger.info(`Closed trade [${tradeId}] via ${reason} @ $${clampedExitPrice.toFixed(3)}: PnL ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}`);
         this.saveLedger();
+        
+        alertService.sendAlert(
+            `Trade Closed (${pnl >= 0 ? '+' : ''}${(pnl / trade.notional_cost * 100).toFixed(1)}%)`,
+            `**Market:** ${trade.market_id}\n**Reason:** ${reason}\n**PnL:** $${pnl.toFixed(2)}\n**Balance:** $${this.ledger.balance.toFixed(2)}`,
+            pnl >= 0 ? AlertLevel.SUCCESS : AlertLevel.WARNING
+        );
     }
 
     public applyStopLoss(tradeId: string, currentSidePrice: number): boolean {

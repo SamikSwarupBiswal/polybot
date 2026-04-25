@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
 
+const MOCKS_ENABLED = process.env.ENABLE_MOCKS === 'true';
+
 export class NewsIngestionService extends EventEmitter {
     private intervalId: NodeJS.Timeout | null = null;
     
@@ -15,10 +17,19 @@ export class NewsIngestionService extends EventEmitter {
 
     constructor() {
         super();
-        logger.info('NewsIngestionService initialized.');
+        if (MOCKS_ENABLED) {
+            logger.info('NewsIngestionService initialized (MOCK MODE — set ENABLE_MOCKS=false to disable).');
+        } else {
+            logger.info('NewsIngestionService initialized (mocks disabled — no fake headlines will be generated).');
+        }
     }
 
     public startPolling() {
+        if (!MOCKS_ENABLED) {
+            logger.info('[NewsIngestion] Skipping mock polling — ENABLE_MOCKS is not true. Wire a real news API here.');
+            return;
+        }
+
         logger.info('Starting 25-second News Ingestion polling sequence (accelerated for testing)...');
         
         // Randomly fetch a news item every 25 seconds

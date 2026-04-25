@@ -24,24 +24,25 @@ export interface TradeSignal {
 }
 
 export class RiskGate {
-    private readonly maxDrawdownLimit = 0.25;
-    private readonly dailyLossLimitPct = 0.10;
-    private readonly maxSingleMarketExposurePct = 0.05;
-    private readonly maxCategoryExposurePct = 0.25;
-    private readonly maxOpenPositions = 15;
-    private readonly minMarketVolumeUsd = 50000;
-    private readonly highLiquidityVolumeUsd = 250000;
-    private readonly minWhaleTradeUsd = 5000;
-    private readonly maxWhaleFollowUsd = 2000;
-    private readonly minHoursToResolution = 48;
-    private readonly minTradeSizeUsd = 10;
-    private readonly conservativeMaxLossPerTradePct = 0.25;
-    private readonly defaultMaxLossPerTradePct = 0.30;
-    private readonly highConvictionMaxLossPerTradePct = 0.50;
-    private readonly basePortfolioRiskPct = 0.01;
-    private readonly maxPortfolioRiskPct = 0.02;
-    private readonly maxStakePct = 0.035;
-    private readonly highConvictionEdgePct = 0.20;
+    // All thresholds are configurable via env vars — defaults match original hardcoded values
+    private readonly maxDrawdownLimit = Number(process.env.RISK_MAX_DRAWDOWN || 0.25);
+    private readonly dailyLossLimitPct = Number(process.env.RISK_DAILY_LOSS_LIMIT || 0.10);
+    private readonly maxSingleMarketExposurePct = Number(process.env.RISK_MAX_SINGLE_MARKET || 0.05);
+    private readonly maxCategoryExposurePct = Number(process.env.RISK_MAX_CATEGORY || 0.25);
+    private readonly maxOpenPositions = Number(process.env.RISK_MAX_POSITIONS || 15);
+    private readonly minMarketVolumeUsd = Number(process.env.RISK_MIN_VOLUME || 50000);
+    private readonly highLiquidityVolumeUsd = Number(process.env.RISK_HIGH_LIQUIDITY || 250000);
+    private readonly minWhaleTradeUsd = Number(process.env.RISK_MIN_WHALE_TRADE || 5000);
+    private readonly maxWhaleFollowUsd = Number(process.env.RISK_MAX_WHALE_FOLLOW || 2000);
+    private readonly minHoursToResolution = Number(process.env.RISK_MIN_HOURS_RESOLUTION || 48);
+    private readonly minTradeSizeUsd = Number(process.env.RISK_MIN_TRADE_SIZE || 10);
+    private readonly conservativeMaxLossPerTradePct = Number(process.env.RISK_CONSERVATIVE_MAX_LOSS || 0.25);
+    private readonly defaultMaxLossPerTradePct = Number(process.env.RISK_DEFAULT_MAX_LOSS || 0.30);
+    private readonly highConvictionMaxLossPerTradePct = Number(process.env.RISK_HIGH_CONVICTION_MAX_LOSS || 0.50);
+    private readonly basePortfolioRiskPct = Number(process.env.RISK_BASE_PORTFOLIO || 0.01);
+    private readonly maxPortfolioRiskPct = Number(process.env.RISK_MAX_PORTFOLIO || 0.02);
+    private readonly maxStakePct = Number(process.env.RISK_MAX_STAKE || 0.035);
+    private readonly highConvictionEdgePct = Number(process.env.RISK_HIGH_CONVICTION_EDGE || 0.20);
 
     /**
      * Evaluates an incoming strategy signal against risk limits.
