@@ -47,7 +47,7 @@ async function main() {
         intervalMs: 15 * 60 * 1000,
         signalsPerCycle: 5,
         maxPages: 10,
-        minVolumeUsd: 50000,
+        minVolumeUsd: 500,
         priceHistory,
         calibration
     });

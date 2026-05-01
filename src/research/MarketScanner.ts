@@ -36,7 +36,7 @@ export class MarketScanner {
         cacheTtlMs?: number;
     }) {
         this.maxPages = opts?.maxPages ?? 20;       // Up to 2000 markets
-        this.minVolumeUsd = opts?.minVolumeUsd ?? 50000;
+        this.minVolumeUsd = opts?.minVolumeUsd ?? 500;
         this.minHoursToResolution = opts?.minHoursToResolution ?? 48;
         this.cacheTtlMs = opts?.cacheTtlMs ?? 10 * 60 * 1000; // 10 min
     }
@@ -85,46 +85,77 @@ export class MarketScanner {
         const now = Date.now();
         const minEndMs = now + this.minHoursToResolution * 60 * 60 * 1000;
 
+        let dropBasic = 0, dropVolume = 0, dropTokens = 0, dropTime = 0, dropOther = 0;
+
         const candidates: CandidateMarket[] = allRaw
             .filter((m: any) => {
                 // Must have basic fields
-                if (!m.condition_id || !m.question) return false;
+                if (!m.conditionId || !m.question) { dropBasic++; return false; }
 
                 // Volume filter
                 const volume = Number(m.volume || m.volumeNum || 0);
-                if (volume < this.minVolumeUsd) return false;
+                if (volume < this.minVolumeUsd) { dropVolume++; return false; }
 
                 // Must have token IDs for CLOB pricing
+                let clobTokenIds: string[] = [];
+                try {
+                    clobTokenIds = typeof m.clobTokenIds === 'string' ? JSON.parse(m.clobTokenIds) : (Array.isArray(m.clobTokenIds) ? m.clobTokenIds : []);
+                } catch (e) {
+                    clobTokenIds = [];
+                }
                 const tokens = Array.isArray(m.tokens) ? m.tokens : [];
-                if (tokens.length === 0) return false;
-                if (!tokens.some((t: any) => t.token_id)) return false;
+                if (clobTokenIds.length === 0 && tokens.length === 0) { dropTokens++; return false; }
 
                 // Time-to-resolution filter
-                const endDate = m.endDate || m.end_date_iso || '';
+                const endDate = m.endDate || m.endDateIso || m.end_date_iso || '';
                 const endMs = new Date(endDate).getTime();
-                if (Number.isNaN(endMs) || endMs < minEndMs) return false;
+                if (Number.isNaN(endMs) || endMs < minEndMs) { dropTime++; return false; }
 
                 return true;
             })
-            .map((m: any) => ({
-                conditionId: m.condition_id,
+            .map((m: any) => {
+                let tokenList = [];
+                let parsedClobTokenIds: string[] = [];
+                let parsedOutcomes: string[] = [];
+                
+                try {
+                    parsedClobTokenIds = typeof m.clobTokenIds === 'string' ? JSON.parse(m.clobTokenIds) : (Array.isArray(m.clobTokenIds) ? m.clobTokenIds : []);
+                } catch (e) { parsedClobTokenIds = []; }
+                
+                try {
+                    parsedOutcomes = typeof m.outcomes === 'string' ? JSON.parse(m.outcomes) : (Array.isArray(m.outcomes) ? m.outcomes : []);
+                } catch (e) { parsedOutcomes = []; }
+
+                if (Array.isArray(m.tokens) && m.tokens.length > 0) {
+                    tokenList = m.tokens.map((t: any) => ({
+                        token_id: t.token_id || '',
+                        outcome: t.outcome || 'Unknown'
+                    }));
+                } else if (parsedClobTokenIds.length > 0 && parsedOutcomes.length > 0) {
+                    tokenList = parsedClobTokenIds.map((tid: string, index: number) => ({
+                        token_id: tid,
+                        outcome: parsedOutcomes[index] || 'Unknown'
+                    }));
+                }
+
+                return {
+                conditionId: m.conditionId,
                 question: m.question || '',
                 category: MarketScanner.mapCategory(m.category || m.tags?.[0] || ''),
                 volume: Number(m.volume || m.volumeNum || 0),
-                endDate: m.endDate || m.end_date_iso || '',
+                endDate: m.endDate || m.endDateIso || m.end_date_iso || '',
                 active: true,
                 closed: false,
-                tokens: (m.tokens || []).map((t: any) => ({
-                    token_id: t.token_id || '',
-                    outcome: t.outcome || 'Unknown'
-                })),
+                tokens: tokenList,
                 slug: m.slug || '',
                 description: m.description || ''
-            }));
+                };
+            });
 
         this.cachedMarkets = candidates;
         this.cacheTimestamp = Date.now();
 
+        logger.info(`[MarketScanner] Filters dropped: Basic=${dropBasic}, Volume=${dropVolume}, Tokens=${dropTokens}, Time=${dropTime}`);
         logger.info(`[MarketScanner] ${candidates.length} markets passed filters (volume >= $${this.minVolumeUsd}, >= ${this.minHoursToResolution}h to resolution, has tokens).`);
         return candidates;
     }

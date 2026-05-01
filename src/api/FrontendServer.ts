@@ -234,29 +234,15 @@ export class FrontendServer {
                     return;
                 }
                 if (action === 'deposit' && typeof amount === 'number' && amount > 0) {
-                    // Deposit by adding to balance directly via ledger
-                    const currentBalance = this.wallet.getBalance();
-                    // We access the ledger path and modify it
-                    const ledgerPath = path.resolve(__dirname, '../../ledger.json');
-                    if (fs.existsSync(ledgerPath)) {
-                        const data = JSON.parse(fs.readFileSync(ledgerPath, 'utf-8'));
-                        data.balance += amount;
-                        data.total_deposited += amount;
-                        fs.writeFileSync(ledgerPath, JSON.stringify(data, null, 2));
-                        logger.info(`[Wallet API] Deposited $${amount}. New balance: $${data.balance.toFixed(2)}`);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ success: true, newBalance: data.balance }));
-                    } else {
-                        res.writeHead(500, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({ error: 'Ledger not found' }));
-                    }
+                    const newBalance = this.wallet.deposit(amount);
+                    logger.info(`[Wallet API] Deposited $${amount}. New balance: $${newBalance.toFixed(2)}`);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true, newBalance }));
                 } else if (action === 'reset' && typeof amount === 'number' && amount > 0) {
-                    const ledgerPath = path.resolve(__dirname, '../../ledger.json');
-                    const newLedger = { balance: amount, total_deposited: amount, trades: [] };
-                    fs.writeFileSync(ledgerPath, JSON.stringify(newLedger, null, 2));
+                    const newBalance = this.wallet.reset(amount);
                     logger.info(`[Wallet API] Reset wallet to $${amount}`);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: true, newBalance: amount }));
+                    res.end(JSON.stringify({ success: true, newBalance }));
                 } else {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: 'Invalid action. Use {action: "deposit"|"reset", amount: number}' }));

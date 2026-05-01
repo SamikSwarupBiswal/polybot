@@ -76,9 +76,25 @@ export class VirtualWallet {
             .catch(err => logger.error(`[VirtualWallet] Failed to save ledger: ${err.message}`));
     }
 
-    /** Synchronous save for graceful shutdown — ensures data is flushed before exit. */
     public save() {
         fs.writeFileSync(this.ledgerPath, JSON.stringify(this.ledger, null, 2));
+    }
+
+    public deposit(amount: number): number {
+        this.ledger.balance += amount;
+        this.ledger.total_deposited += amount;
+        this.saveLedger();
+        return this.ledger.balance;
+    }
+
+    public reset(newBalance: number): number {
+        this.ledger = {
+            balance: newBalance,
+            total_deposited: newBalance,
+            trades: []
+        };
+        this.saveLedger();
+        return this.ledger.balance;
     }
 
     public getBalance(): number {

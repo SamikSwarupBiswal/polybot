@@ -63,9 +63,36 @@ function readBody(req: any): Promise<string> {
   });
 }
 
+import http from 'http';
+
+function forwardToBackend(req: any, res: any, body: string | null): Promise<boolean> {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: 'localhost',
+      port: 3001,
+      path: req.url,
+      method: req.method,
+      headers: { ...req.headers, host: 'localhost:3001' },
+      timeout: 1000
+    };
+
+    const backendReq = http.request(options, (backendRes) => {
+      res.writeHead(backendRes.statusCode || 200, backendRes.headers);
+      backendRes.pipe(res);
+      resolve(true);
+    });
+
+    backendReq.on('error', () => resolve(false));
+    backendReq.on('timeout', () => { backendReq.destroy(); resolve(false); });
+
+    if (body) backendReq.write(body);
+    backendReq.end();
+  });
+}
+
 /**
  * Vite plugin that provides local API fallback when the backend engine isn't running.
- * Handles /api/config, /api/wallet, /api/status directly from the dev server.
+ * Handles /api/config, /api/wallet, /api/status.
  */
 function localApiPlugin(): Plugin {
   return {
@@ -75,9 +102,16 @@ function localApiPlugin(): Plugin {
         // Only handle /api/* routes
         if (!req.url?.startsWith('/api/')) return next();
 
-        res.setHeader('Content-Type', 'application/json');
-
         try {
+          const body = (req.method === 'POST' || req.method === 'PUT') ? await readBody(req) : null;
+          
+          // Attempt to forward to the real backend first
+          const handled = await forwardToBackend(req, res, body);
+          if (handled) return;
+
+          // If backend is offline, fall back to local file logic
+          res.setHeader('Content-Type', 'application/json');
+
           // ─── GET /api/config ─────────────────────────
           if (req.url === '/api/config' && req.method === 'GET') {
             const all = parseEnvFile(ENV_PATH);
@@ -89,8 +123,7 @@ function localApiPlugin(): Plugin {
 
           // ─── POST /api/config ────────────────────────
           if (req.url === '/api/config' && req.method === 'POST') {
-            const body = await readBody(req);
-            const { config } = JSON.parse(body);
+            const { config } = JSON.parse(body || '{}');
             if (!config || typeof config !== 'object') {
               res.statusCode = 400;
               res.end(JSON.stringify({ error: 'Missing config object' }));
@@ -126,8 +159,7 @@ function localApiPlugin(): Plugin {
 
           // ─── POST /api/wallet ────────────────────────
           if (req.url === '/api/wallet' && req.method === 'POST') {
-            const body = await readBody(req);
-            const { action, amount } = JSON.parse(body);
+            const { action, amount } = JSON.parse(body || '{}');
             if (typeof amount !== 'number' || amount <= 0) {
               res.statusCode = 400;
               res.end(JSON.stringify({ error: 'Invalid amount' }));
@@ -173,7 +205,9 @@ function localApiPlugin(): Plugin {
           res.end(JSON.stringify({ error: 'Not found' }));
         } catch (err: any) {
           res.statusCode = 500;
-          res.end(JSON.stringify({ error: err.message }));
+          if (!res.writableEnded) {
+            res.end(JSON.stringify({ error: err.message }));
+          }
         }
       });
     },
