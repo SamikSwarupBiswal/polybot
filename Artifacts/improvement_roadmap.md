@@ -280,13 +280,13 @@ leg2TimeoutSeconds: 60, maxSlippage: 0.02
                     HIGH IMPACT
                         │
     ┌───────────────────┼───────────────────┐
-    │   1.1 API Retry   │  3.1 Dip Arb     │
-    │   1.2 Mock Whales │  3.2 Security    │
-    │   1.3 I/O Fix     │  4.1 React UI    │
+    │   1.1 API Retry   │  3.1 Dip Arb      │
+    │   1.2 Mock Whales │  3.2 Security     │
+    │   1.3 I/O Fix     │  4.1 React UI     │
     │   1.6 Real Whales │                   │
     │                   │                   │
 LOW ├───────────────────┼───────────────────┤ HIGH
-EFFORT│  1.4 Config      │  2.1 Unit Tests  │ EFFORT
+EFFORT│  1.4 Config      │  2.1 Unit Tests   │ EFFORT
     │  1.5 Dedup Docs  │  2.5 AI Fix      │
     │  2.2 LLM Cache   │  3.3 Backtesting │
     │  2.3 Shutdown     │  3.5 Alerts      │

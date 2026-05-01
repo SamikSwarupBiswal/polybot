@@ -21,6 +21,12 @@ interface Metrics {
     roi: string;
     maxDrawdown: string;
     openTrades: number;
+    totalPnl: string;
+    totalTrades: number;
+    closedTrades: number;
+    wins: number;
+    totalDeposited: number;
+    conservativeEquity: string;
 }
 
 interface PolybotState {
