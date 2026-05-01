@@ -72,7 +72,7 @@ export const Dashboard: React.FC = () => {
     setWalletSaving(false);
   }, [walletInput, walletAction]);
 
-  const engineOnline = connected && engineStatus?.status === 'ONLINE';
+  const engineOnline = connected;
 
   return (
     <div className="p-5 flex gap-5 h-[calc(100vh-56px)] overflow-hidden">

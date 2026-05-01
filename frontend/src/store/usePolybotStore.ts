@@ -50,6 +50,8 @@ export const usePolybotStore = create<PolybotState>((set) => ({
 
     connect: (url = 'ws://localhost:3001') => {
         if (ws) {
+            // Remove the onclose handler so it doesn't trigger a reconnect when we intentionally close it
+            ws.onclose = null;
             ws.close();
         }
 
@@ -87,7 +89,9 @@ export const usePolybotStore = create<PolybotState>((set) => ({
 
     disconnect: () => {
         if (ws) {
+            ws.onclose = null;
             ws.close();
+            set({ connected: false });
         }
     }
 }));
