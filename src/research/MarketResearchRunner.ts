@@ -156,6 +156,12 @@ export class MarketResearchRunner extends EventEmitter {
                 for (const { market: pm, edge } of edgeResults) {
                     if (emittedCount >= this.signalsPerCycle) break;
 
+                    // Skip DEAD/AVOID regime — extreme spreads cause immediate stop-loss
+                    if (edge.regime.strategyHint === 'AVOID') {
+                        logger.debug(`[MarketResearch] Skipping ${pm.market.conditionId.substring(0, 8)} — regime ${edge.regime.regime} is AVOID.`);
+                        continue;
+                    }
+
                     const marketId = pm.market.conditionId;
                     if (this.isRecentlySignaled(marketId)) continue;
 
@@ -163,6 +169,13 @@ export class MarketResearchRunner extends EventEmitter {
                     if (!scored) continue;
 
                     const signal = this.buildEdgeSignal(scored, edge);
+
+                    // Skip sub-5-cent penny markets — bid/ask spread ratio is untradeble
+                    if (signal.requested_price < 0.05) {
+                        logger.debug(`[MarketResearch] Skipping ${marketId.substring(0, 8)} — price $${signal.requested_price.toFixed(3)} below $0.05 minimum.`);
+                        continue;
+                    }
+
                     this.recentlySignaled.set(marketId, Date.now());
                     emittedCount++;
 
@@ -178,7 +191,7 @@ export class MarketResearchRunner extends EventEmitter {
                 }
             }
 
-            // Fallback for first cycles / efficient markets
+            // Fallback for first cycles / efficient markets (UNKNOWN regime only)
             if (emittedCount === 0) {
                 for (const scored of ranked) {
                     if (emittedCount >= Math.min(this.signalsPerCycle, 2)) break;
@@ -187,6 +200,10 @@ export class MarketResearchRunner extends EventEmitter {
                     if (this.isRecentlySignaled(marketId)) continue;
 
                     const signal = this.buildFallbackSignal(scored);
+
+                    // Same guards: skip AVOID regime and penny markets
+                    if (signal.requested_price < 0.05) continue;
+
                     this.recentlySignaled.set(marketId, Date.now());
                     emittedCount++;
 
