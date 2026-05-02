@@ -238,11 +238,15 @@ export class FrontendServer {
                     logger.info(`[Wallet API] Deposited $${amount}. New balance: $${newBalance.toFixed(2)}`);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ success: true, newBalance }));
+                    // Push live balance update to all connected dashboard clients
+                    this.pushSyncState(null, this.wallet);
                 } else if (action === 'reset' && typeof amount === 'number' && amount > 0) {
                     const newBalance = this.wallet.reset(amount);
                     logger.info(`[Wallet API] Reset wallet to $${amount}`);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ success: true, newBalance }));
+                    // Push live balance update to all connected dashboard clients
+                    this.pushSyncState(null, this.wallet);
                 } else {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: 'Invalid action. Use {action: "deposit"|"reset", amount: number}' }));

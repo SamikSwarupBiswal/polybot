@@ -145,7 +145,7 @@ export class MarketResearchRunner extends EventEmitter {
 
             // ─── Step 5: LLM enrichment (optional) ────────────────
             if (this.llm.isEnabled() && edgeResults.length > 0) {
-                await this.enrichWithLLM(edgeResults.slice(0, 5));
+                await this.enrichWithLLM(edgeResults.slice(0, 3)); // max 3 to stay under free-tier RPM
             }
 
             // ─── Step 6: Emit signals ─────────────────────────────
@@ -314,6 +314,9 @@ export class MarketResearchRunner extends EventEmitter {
                     `edge=${(edge.netEdge * 100).toFixed(1)}%`
                 );
             }
+
+            // Throttle: free-tier Gemini Flash allows ~2 RPM — wait 2s between calls
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
 
