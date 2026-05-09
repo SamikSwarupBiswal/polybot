@@ -13,8 +13,8 @@ const TRAILING_ACTIVATION_PCT = 0.15;
 /** Default trailing distance from high water mark. */
 const TRAILING_PCT_NORMAL = 0.15;
 const TRAILING_PCT_HIGH_CONVICTION = 0.10;
-/** Hours before market end to trigger time-based exit. */
-const TIME_EXIT_HOURS = 24;
+/** Hours before market end to trigger time-based exit. Reduced to 0.01 (36 seconds) for short-term trading. */
+const TIME_EXIT_HOURS = 0.01;
 /** Confidence half-life in days. After this many days, effective confidence = 50% of original. */
 const CONFIDENCE_HALF_LIFE_DAYS = 21;
 /** Minimum effective confidence before stale exit triggers. */

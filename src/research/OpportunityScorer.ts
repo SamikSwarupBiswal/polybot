@@ -68,30 +68,40 @@ export class OpportunityScorer {
                 breakdown.volumeActivity * WEIGHTS.volumeActivity +
                 breakdown.priceRange     * WEIGHTS.priceRange;
 
-            // Determine recommended side: prefer the side with better price opportunity
-            // (further from extremes, tighter spread)
+            // Determine recommended side using actual price advantage, not a symmetric
+            // comparison that always resolves to YES.
             const yesPrice = pm.yesMidpoint;
             const noPrice = 1 - yesPrice;
             const yesToken = pm.snapshots.find(s => s.outcome.toUpperCase() === 'YES');
             const noToken = pm.snapshots.find(s => s.outcome.toUpperCase() === 'NO');
 
-            // For now: pick the side closer to 0.50 (more uncertain = more room for edge)
             let recommendedSide: 'YES' | 'NO';
             let recommendedPrice: number;
             let recommendedTokenId: string;
 
-            if (Math.abs(yesPrice - 0.5) <= Math.abs(noPrice - 0.5) && yesToken) {
+            // Score each side: lower price = more upside potential, tighter spread = better execution
+            const yesAsk = yesToken && yesToken.bestAsk > 0 ? yesToken.bestAsk : yesPrice;
+            const noAsk = noToken && noToken.bestAsk > 0 ? noToken.bestAsk : noPrice;
+            // Upside potential: buying at 0.30 has more upside (pays $1 if correct) than at 0.70
+            const yesUpside = (1 - yesAsk) / Math.max(yesAsk, 0.01);
+            const noUpside = (1 - noAsk) / Math.max(noAsk, 0.01);
+
+            if (noUpside > yesUpside && noToken) {
+                recommendedSide = 'NO';
+                recommendedPrice = noAsk;
+                recommendedTokenId = noToken.tokenId;
+            } else if (yesToken) {
                 recommendedSide = 'YES';
-                recommendedPrice = yesToken.bestAsk > 0 ? yesToken.bestAsk : yesPrice;
+                recommendedPrice = yesAsk;
                 recommendedTokenId = yesToken.tokenId;
             } else if (noToken) {
                 recommendedSide = 'NO';
-                recommendedPrice = noToken.bestAsk > 0 ? noToken.bestAsk : noPrice;
+                recommendedPrice = noAsk;
                 recommendedTokenId = noToken.tokenId;
             } else {
-                // Fallback to YES
-                recommendedSide = 'YES';
-                recommendedPrice = yesPrice;
+                // True last resort — use whatever snapshot exists
+                recommendedSide = yesPrice <= 0.50 ? 'YES' : 'NO';
+                recommendedPrice = yesPrice <= 0.50 ? yesPrice : noPrice;
                 recommendedTokenId = pm.snapshots[0]?.tokenId || '';
             }
 
@@ -124,13 +134,14 @@ export class OpportunityScorer {
             ? volRank / (sortedVolumes.length - 1)
             : 0.5;
 
-        // --- Time Safety: 7-90 days is the sweet spot ---
+        // --- Time Safety: spread across all timeframes ---
         const hoursToEnd = (new Date(m.endDate).getTime() - Date.now()) / (1000 * 60 * 60);
         const daysToEnd = hoursToEnd / 24;
         let timeSafety: number;
-        if (daysToEnd < 2) timeSafety = 0;
-        else if (daysToEnd < 7) timeSafety = 0.3;
-        else if (daysToEnd <= 90) timeSafety = 1.0;
+        if (daysToEnd < 0.1) timeSafety = 0.3;        // < ~2.4 hours — risky but allowed
+        else if (daysToEnd < 2) timeSafety = 0.6;      // Short-term: viable for quick bets
+        else if (daysToEnd < 7) timeSafety = 0.8;      // Near-term: good opportunity window
+        else if (daysToEnd <= 90) timeSafety = 1.0;     // Sweet spot
         else if (daysToEnd <= 180) timeSafety = 0.7;
         else timeSafety = 0.4; // Very long-dated
 

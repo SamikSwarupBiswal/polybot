@@ -14,6 +14,7 @@ interface TradeRecord {
     pnl: number | null;
     timestamp: string;
     resolved_at?: string | null;
+    market_end_date?: string;
 }
 
 interface Metrics {

@@ -12,6 +12,49 @@ interface EngineStatus {
   walletBalance: number;
 }
 
+const Countdown: React.FC<{ endDate: string | undefined }> = ({ endDate }) => {
+  const [timeLeft, setTimeLeft] = useState<string>('');
+
+  useEffect(() => {
+    if (!endDate) return;
+    const endMs = new Date(endDate).getTime();
+    if (isNaN(endMs)) { setTimeLeft(''); return; }
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diff = endMs - now;
+      if (diff <= 0) {
+        setTimeLeft('RESOLVING...');
+        return;
+      }
+      
+      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const s = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      let res = '';
+      if (d > 0) res += `${d}d `;
+      if (h > 0 || d > 0) res += `${h}h `;
+      res += `${m}m ${s}s`;
+      setTimeLeft(res);
+    };
+
+    updateTimer();
+    const iv = setInterval(updateTimer, 1000);
+    return () => clearInterval(iv);
+  }, [endDate]);
+
+  if (!timeLeft) return null;
+  
+  return (
+    <div className="mt-3 bg-black/40 border border-white/5 p-2 rounded-sm text-center">
+      <p className="text-[9px] text-zinc-600 uppercase tracking-widest mb-0.5">Market Closes In</p>
+      <p className="text-xs text-secondary font-mono font-bold animate-pulse">{timeLeft}</p>
+    </div>
+  );
+};
+
 export const Dashboard: React.FC = () => {
   const { connected, balance, metrics, trades } = usePolybotStore();
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
@@ -21,7 +64,12 @@ export const Dashboard: React.FC = () => {
   const [walletMsg, setWalletMsg] = useState('');
 
   const openTrades = trades.filter((t) => t.status === 'OPEN');
-  const recentTrades = [...trades].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 6);
+  // Sort by open first, then closed, and sort internally by newest
+  const recentTrades = [...trades].sort((a, b) => {
+    if (a.status === 'OPEN' && b.status !== 'OPEN') return -1;
+    if (b.status === 'OPEN' && a.status !== 'OPEN') return 1;
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
 
   // Poll engine status
   useEffect(() => {
@@ -248,39 +296,44 @@ export const Dashboard: React.FC = () => {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[500px] overflow-y-auto obsidian-scrollbar pr-2">
               {recentTrades.map((trade) => (
-                <div key={trade.trade_id} className="matte-surface p-4 border-l-2 border-l-transparent hover:border-l-primary transition-colors">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`text-[10px] px-2 py-0.5 uppercase tracking-widest font-bold ${
-                      trade.status === 'OPEN' ? 'bg-tertiary/10 text-tertiary border border-tertiary/20' :
-                      trade.status === 'CLOSED_WIN' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
-                      trade.status === 'CLOSED_LOSS' ? 'bg-error/10 text-error border border-error/20' :
-                      'bg-white/5 text-zinc-500 border border-white/10'
-                    }`}>
-                      {trade.status.replace('CLOSED_', '')}
-                    </span>
-                    <span className={`text-xs font-bold ${trade.side === 'YES' ? 'text-tertiary' : 'text-error'}`}>
-                      {trade.side}
-                    </span>
+                <div key={trade.trade_id} className="matte-surface p-4 border-l-2 border-l-transparent hover:border-l-primary transition-colors flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-[10px] px-2 py-0.5 uppercase tracking-widest font-bold ${
+                        trade.status === 'OPEN' ? 'bg-tertiary/10 text-tertiary border border-tertiary/20' :
+                        trade.status === 'CLOSED_WIN' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                        trade.status === 'CLOSED_LOSS' ? 'bg-error/10 text-error border border-error/20' :
+                        'bg-white/5 text-zinc-500 border border-white/10'
+                      }`}>
+                        {trade.status.replace('CLOSED_', '')}
+                      </span>
+                      <span className={`text-xs font-bold ${trade.side === 'YES' ? 'text-tertiary' : 'text-error'}`}>
+                        {trade.side}
+                      </span>
+                    </div>
+                    <p className="text-sm text-zinc-200 leading-snug mb-3 line-clamp-2">{trade.market_question}</p>
+                    <div className="grid grid-cols-3 gap-2 text-[10px]">
+                      <div>
+                        <p className="text-zinc-600 uppercase">Entry</p>
+                        <p className="text-zinc-300 font-mono">${trade.entry_price.toFixed(3)}</p>
+                      </div>
+                      <div>
+                        <p className="text-zinc-600 uppercase">Size</p>
+                        <p className="text-zinc-300 font-mono">${trade.notional_cost.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-zinc-600 uppercase">PnL</p>
+                        <p className={`font-mono font-bold ${(trade.pnl ?? 0) >= 0 ? 'text-tertiary' : 'text-error'}`}>
+                          {trade.pnl !== null ? `$${trade.pnl.toFixed(2)}` : '—'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-sm text-zinc-200 leading-snug mb-3 line-clamp-2">{trade.market_question}</p>
-                  <div className="grid grid-cols-3 gap-2 text-[10px]">
-                    <div>
-                      <p className="text-zinc-600 uppercase">Entry</p>
-                      <p className="text-zinc-300 font-mono">${trade.entry_price.toFixed(3)}</p>
-                    </div>
-                    <div>
-                      <p className="text-zinc-600 uppercase">Size</p>
-                      <p className="text-zinc-300 font-mono">${trade.notional_cost.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-zinc-600 uppercase">PnL</p>
-                      <p className={`font-mono font-bold ${(trade.pnl ?? 0) >= 0 ? 'text-tertiary' : 'text-error'}`}>
-                        {trade.pnl !== null ? `$${trade.pnl.toFixed(2)}` : '—'}
-                      </p>
-                    </div>
-                  </div>
+                  {trade.status === 'OPEN' && trade.market_end_date && (
+                    <Countdown endDate={trade.market_end_date} />
+                  )}
                 </div>
               ))}
             </div>

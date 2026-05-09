@@ -255,9 +255,26 @@ export class EdgeEstimator {
         const adjustment = totalWeight > 0 ? weightedSum / totalWeight : 0;
         const modelProbability = Math.min(0.95, Math.max(0.05, marketPrice + adjustment));
 
-        // ─── Edge calculation ───────────────────────────────────
+        // ─── Edge calculation (independent YES/NO evaluation) ───
 
-        const rawEdge = Math.abs(modelProbability - marketPrice);
+        // Evaluate both sides independently to avoid structural YES bias.
+        // YES edge: profit if event happens → modelProb - yesPrice
+        // NO edge:  profit if event doesn't happen → (1 - modelProb) - noPrice
+        const noMarketPrice = 1 - marketPrice;
+        const yesEdgeRaw = modelProbability - marketPrice;           // positive = YES underpriced
+        const noEdgeRaw = (1 - modelProbability) - noMarketPrice;   // positive = NO underpriced
+
+        // Pick the side with more raw edge
+        let direction: 'YES' | 'NO';
+        let rawEdge: number;
+        if (yesEdgeRaw >= noEdgeRaw) {
+            direction = 'YES';
+            rawEdge = Math.abs(yesEdgeRaw);
+        } else {
+            direction = 'NO';
+            rawEdge = Math.abs(noEdgeRaw);
+        }
+
         const netEdge = rawEdge - ASSUMED_TRADING_COST;
 
         // Regime gate: AVOID regime markets need higher edge
@@ -266,9 +283,6 @@ export class EdgeEstimator {
             : MIN_NET_EDGE;      // 3% edge normally
 
         const hasEdge = netEdge > effectiveMinEdge && signalCount >= 2;
-
-        // Direction
-        const direction: 'YES' | 'NO' = modelProbability > marketPrice ? 'YES' : 'NO';
 
         // Confidence: edge magnitude × signal quality × volatility × regime × calibration
         const edgeConfidence = Math.min(0.95, 0.50 + netEdge * 3);

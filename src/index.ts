@@ -44,8 +44,9 @@ async function main() {
     const priceHistory = new PriceHistoryStore();
     const calibration = new CalibrationTracker();
     const researchRunner = new MarketResearchRunner({
-        intervalMs: 15 * 60 * 1000,
-        signalsPerCycle: 5,
+        intervalMs: 60 * 1000, // Every 1 minute for rapid continuous trading
+        signalsPerCycle: 15, // Trade up to 15 markets per cycle
+        signalCooldownMs: 60 * 1000, // 1 minute cooldown so it re-trades fast for demo
         maxPages: 10,
         minVolumeUsd: 500,
         priceHistory,

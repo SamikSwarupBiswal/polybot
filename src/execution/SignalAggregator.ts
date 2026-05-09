@@ -16,7 +16,7 @@ export class SignalAggregator {
 
     /** Deduplication: tracks recently-processed market_ids with timestamps */
     private readonly recentlyProcessed = new Map<string, number>();
-    private readonly dedupCooldownMs = 60 * 60 * 1000; // 60 minutes
+    private readonly dedupCooldownMs = 60 * 1000; // 1 minute (reduced from 60 mins for continuous demo)
 
     constructor(
         monitor: WhaleMonitor,

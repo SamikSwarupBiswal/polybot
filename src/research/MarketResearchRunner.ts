@@ -54,7 +54,8 @@ export class MarketResearchRunner extends EventEmitter {
 
         this.scanner = new MarketScanner({
             maxPages: opts?.maxPages ?? 10,
-            minVolumeUsd: opts?.minVolumeUsd ?? 50000
+            minVolumeUsd: opts?.minVolumeUsd ?? 50000,
+            minHoursToResolution: 0.05 // Support extremely short-term markets (3 minutes)
         });
         this.analyzer = new OrderbookAnalyzer();
         this.scorer = new OpportunityScorer({ topN: 30 });
@@ -62,7 +63,7 @@ export class MarketResearchRunner extends EventEmitter {
         this.priceHistory = opts?.priceHistory ?? new PriceHistoryStore();
         this.calibration = opts?.calibration ?? new CalibrationTracker();
         this.edgeEstimator = new EdgeEstimator(this.priceHistory, this.calibration);
-        this.llm = new LLMSignalProvider({ maxCallsPerCycle: 10 });
+        this.llm = new LLMSignalProvider({ maxCallsPerCycle: 2 }); // Lower to avoid Gemini 429
     }
 
     /** Expose calibration tracker for resolution monitor to record outcomes. */
@@ -194,7 +195,7 @@ export class MarketResearchRunner extends EventEmitter {
             // Fallback for first cycles / efficient markets (UNKNOWN regime only)
             if (emittedCount === 0) {
                 for (const scored of ranked) {
-                    if (emittedCount >= Math.min(this.signalsPerCycle, 2)) break;
+                    if (emittedCount >= this.signalsPerCycle) break;
 
                     const marketId = scored.market.market.conditionId;
                     if (this.isRecentlySignaled(marketId)) continue;
