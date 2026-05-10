@@ -840,6 +840,7 @@ MVP/
 | **Short-Term Market Support** | `MarketScanner.ts`, `MarketResearchRunner.ts` | Lowered `minHoursToResolution` filter from 48 hours to 0.05 hours (3 mins) for high-volatility action. |
 | **ExitStrategy Settlement Fix** | `ExitStrategy.ts` | Lowered `TIME_EXIT_HOURS` from 24 hours to 0.01 (36 seconds) to prevent auto-liquidating short-term trades. |
 | **Full Ledger UI & Live Timers** | `Dashboard.tsx`, `usePolybotStore.ts` | Replaced 6-trade slice with full scrollable history. Added live pulsing `Countdown` component to track `market_end_date` for OPEN trades. |
+| **Time-Horizon Risk Tolerance** | `RiskGate.ts` | Adjusted `resolveMaxLossPct` to allow up to 100% loss (no stop-loss) for long-term trades (>30 days) and 75% for medium-term trades (>14 days), preventing premature panic-selling from short-term volatility. |
 
 ---
 

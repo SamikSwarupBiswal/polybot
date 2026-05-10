@@ -163,8 +163,24 @@ export class RiskGate {
     }
 
     private resolveMaxLossPct(signal: TradeSignal): number {
+        // Allow wider stop-losses for long-term markets to avoid panic-selling on short-term volatility
+        let longTermTolerance = 0;
+        if (signal.market_end_date) {
+            const daysToExpiry = (new Date(signal.market_end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+            if (daysToExpiry > 30) {
+                longTermTolerance = 1.0; // 100% tolerance (no stop-loss) for > 30 days
+            } else if (daysToExpiry > 14) {
+                longTermTolerance = 0.75; // 75% tolerance for medium term
+            }
+        }
+
         if (typeof signal.max_loss_pct === 'number') {
-            return Math.min(Math.max(signal.max_loss_pct, 0.05), this.highConvictionMaxLossPerTradePct);
+            const maxAllowed = longTermTolerance > 0.5 ? longTermTolerance : this.highConvictionMaxLossPerTradePct;
+            return Math.min(Math.max(signal.max_loss_pct, 0.05), maxAllowed);
+        }
+
+        if (longTermTolerance > 0.5) {
+            return longTermTolerance;
         }
 
         const edgePct = this.estimateEdgePct(signal);
