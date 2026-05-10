@@ -44,9 +44,9 @@ async function main() {
     const priceHistory = new PriceHistoryStore();
     const calibration = new CalibrationTracker();
     const researchRunner = new MarketResearchRunner({
-        intervalMs: 60 * 1000, // Every 1 minute for rapid continuous trading
-        signalsPerCycle: 15, // Trade up to 15 markets per cycle
-        signalCooldownMs: 60 * 1000, // 1 minute cooldown so it re-trades fast for demo
+        intervalMs: 3 * 60 * 1000, // Every 3 minutes — gives Gemini time to research 5 markets per cycle
+        signalsPerCycle: 3, // Max 3 AI-researched signals per cycle (quality over quantity)
+        signalCooldownMs: 5 * 60 * 1000, // 5 min cooldown — don't re-research same market too fast
         maxPages: 10,
         minVolumeUsd: 500,
         priceHistory,

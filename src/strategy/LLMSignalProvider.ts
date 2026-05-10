@@ -44,7 +44,7 @@ export class LLMSignalProvider {
         this.apiKey = process.env.GEMINI_API_KEY || null;
         this.model = opts?.model ?? 'gemini-2.0-flash';
         this.maxCallsPerCycle = opts?.maxCallsPerCycle ?? 10;
-        this.cacheTtlMs = opts?.cacheTtlMs ?? 60 * 60 * 1000; // 1 hour default
+        this.cacheTtlMs = opts?.cacheTtlMs ?? 30 * 60 * 1000; // 30 min cache — keep research fresh
         this.enabled = !!this.apiKey;
 
         if (this.enabled) {
@@ -105,7 +105,7 @@ export class LLMSignalProvider {
                     }
                 },
                 timeout: 15000
-            }, { label: 'Gemini LLM', maxRetries: 2 });
+            }, { label: 'Gemini LLM', maxRetries: 1, baseDelayMs: 5000 });
 
             if (!response) {
                 logger.debug('[LLMSignalProvider] Gemini API call failed after retries.');
@@ -239,26 +239,31 @@ export class LLMSignalProvider {
             ? `\nAdditional context: ${description.substring(0, 500)}`
             : '';
 
-        return `You are an expert prediction market analyst. Your job is to estimate the true probability of the following event, based on your knowledge of current events, historical precedent, and domain expertise.
+        return `You are a world-class prediction market researcher. Your job is to determine the ACTUAL LIKELY OUTCOME of the following event by analyzing real-world evidence.
 
 Market question: "${question}"
 Category: ${category}
-Current market price (probability): ${(currentPrice * 100).toFixed(1)}%${descBlock}
+Current market YES price: ${(currentPrice * 100).toFixed(1)}% (this is what traders are currently paying)${descBlock}
 
-Based on your analysis, estimate the TRUE probability that this event will resolve YES.
+RESEARCH INSTRUCTIONS:
+1. RECENT NEWS: What are the latest developments relevant to this event? Consider news from the last 7 days.
+2. EXPERT ANALYSIS: What do domain experts, polls, bookmakers, or statistical models say about this outcome?
+3. HISTORICAL PRECEDENT: How often do events like this actually happen? What is the base rate?
+4. KEY FACTORS: What are the 2-3 most important factors that will determine the outcome?
+5. CONTRARIAN CHECK: Is the market price reasonable, or is there a clear information gap?
 
-Important guidelines:
-- Be calibrated: if you're unsure, stay close to the market price.
-- Only deviate significantly if you have strong reasoning.
-- Consider base rates for this type of event.
-- Consider the current date and any relevant deadlines.
+CRITICAL RULES:
+- Do NOT default to "the market is probably right." The whole point is finding where the market is WRONG.
+- If this is a long-shot event (e.g., obscure country winning World Cup), be honest — if the true probability is 1-3%, say so, even if the market says 10-20%.
+- If you genuinely believe the market is mispriced, explain WHY with specific evidence.
+- Consider the current date (${new Date().toISOString().split('T')[0]}) and relevant timelines.
 
 Respond with ONLY a valid JSON object (no markdown, no explanation outside JSON):
 {
-  "probability": <number between 0 and 1>,
-  "confidence": <number between 0 and 1, how confident you are in your estimate>,
-  "reasoning": "<one paragraph explaining your logic>",
-  "direction": "<YES or NO — which side you'd bet>"
+  "probability": <number between 0 and 1 — your researched estimate of YES resolving>,
+  "confidence": <number between 0 and 1 — how confident you are in your research>,
+  "reasoning": "<2-3 sentences explaining your research findings and key evidence>",
+  "direction": "<YES or NO — which side you would bet based on your research>"
 }`;
     }
 
